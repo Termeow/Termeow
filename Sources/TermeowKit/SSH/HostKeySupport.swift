@@ -37,34 +37,43 @@ final class PromptingHostKeyValidator: NIOSSHClientServerAuthenticationDelegate,
 
     func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
         let presented = HostKeySupport.record(host: host, port: port, key: hostKey)
+        let loop = validationCompletePromise.futureResult.eventLoop
         Task {
+            let result: Result<Void, Error>
             do {
                 let check = try store.check(presented: presented)
                 switch check {
                 case .match:
-                    validationCompletePromise.succeed(())
+                    result = .success(())
                 case .unknown, .mismatch:
-                    let decision = await prompt(check)
-                    switch decision {
+                    switch await prompt(check) {
                     case .cancel:
                         if case .mismatch = check {
-                            validationCompletePromise.fail(SSHError.hostKeyChanged)
+                            result = .failure(SSHError.hostKeyChanged)
                         } else {
-                            validationCompletePromise.fail(SSHError.hostKeyRejected)
+                            result = .failure(SSHError.hostKeyRejected)
                         }
                     case .connectOnce:
                         if case .mismatch = check {
                             AppLog.ssh.error("Host key mismatch accepted for this connection only")
                         }
-                        validationCompletePromise.succeed(())
+                        result = .success(())
                     case .trustAndSave:
                         try store.upsert(presented)
-                        validationCompletePromise.succeed(())
+                        result = .success(())
                     }
                 }
             } catch {
                 AppLog.ssh.error("Host key validation failed")
-                validationCompletePromise.fail(error)
+                result = .failure(error)
+            }
+            loop.execute {
+                switch result {
+                case .success:
+                    validationCompletePromise.succeed(())
+                case .failure(let error):
+                    validationCompletePromise.fail(error)
+                }
             }
         }
     }
