@@ -12,6 +12,8 @@ struct TermeowApp: App {
                 .frame(minWidth: 880, minHeight: 560)
         }
         .defaultSize(width: 1100, height: 720)
+        .windowStyle(.automatic)
+        .windowToolbarStyle(.unified)
         .commands {
             AppCommands(model: model)
         }
@@ -44,11 +46,6 @@ struct AppCommands: Commands {
                 .keyboardShortcut("f", modifiers: [.command])
         }
         CommandGroup(after: .sidebar) {
-            Button(model.sidebarVisible ? "Hide Sessions" : "Show Sessions") {
-                model.sidebarVisible.toggle()
-            }
-            .keyboardShortcut("s", modifiers: [.command, .control])
-            Divider()
             Button("Previous Tab") { model.selectRelativeTab(-1) }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
             Button("Next Tab") { model.selectRelativeTab(1) }

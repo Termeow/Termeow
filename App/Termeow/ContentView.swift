@@ -6,16 +6,11 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var model = model
-        Group {
-            if model.sidebarVisible {
-                HSplitView {
-                    SessionSidebar()
-                        .frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
-                    detailColumn
-                }
-            } else {
-                detailColumn
-            }
+        NavigationSplitView(columnVisibility: visibility) {
+            SessionSidebar()
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
+        } detail: {
+            detailColumn
         }
         .sheet(item: $model.editor) { editor in
             SessionEditorView(state: editor)
@@ -28,15 +23,25 @@ struct ContentView: View {
         }
     }
 
+    private var visibility: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { model.sidebarVisible ? .all : .detailOnly },
+            set: { model.sidebarVisible = $0 != .detailOnly }
+        )
+    }
+
     private var detailColumn: some View {
-        VStack(spacing: 0) {
-            TabBarView()
-            Divider()
-            detailBody
-            Divider()
-            StatusBarView()
-        }
-        .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
+        detailBody
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle(model.selectedTab?.controller.title ?? "Termeow")
+            .navigationSubtitle(subtitle)
+            .safeAreaInset(edge: .top, spacing: 0) { TabBarView() }
+            .safeAreaInset(edge: .bottom, spacing: 0) { StatusBarView() }
+    }
+
+    private var subtitle: String {
+        guard let tab = model.selectedTab else { return "No session" }
+        return "\(tab.controller.statusText) · \(tab.controller.cols)×\(tab.controller.rows)"
     }
 
     @ViewBuilder
@@ -54,27 +59,16 @@ struct TabBarView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 8) {
-            if !model.sidebarVisible {
-                Button("Show Sessions") {
-                    model.sidebarVisible = true
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(model.tabs) { tab in
+                    TabChip(tab: tab, selected: tab.id == model.selectedTabID)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .padding(.leading, 8)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(model.tabs) { tab in
-                        TabChip(tab: tab, selected: tab.id == model.selectedTabID)
-                    }
-                }
-                .padding(.horizontal, 6)
-            }
-            Spacer(minLength: 0)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
         }
-        .frame(height: 36)
-        .background(.bar)
+        .background(.ultraThinMaterial)
     }
 }
 
@@ -84,25 +78,30 @@ struct TabChip: View {
     var selected: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
-            Text(tab.controller.title)
-                .lineLimit(1)
-            Button {
-                model.closeTab(tab.id)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2)
+        Button {
+            model.selectedTabID = tab.id
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 7, height: 7)
+                Text(tab.controller.title)
+                    .lineLimit(1)
+                Button {
+                    model.closeTab(tab.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
             }
-            .buttonStyle(.borderless)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(selected ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: Capsule())
+            .contentShape(Capsule())
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(selected ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
-        .contentShape(Rectangle())
-        .onTapGesture { model.selectedTabID = tab.id }
+        .buttonStyle(.plain)
     }
 
     private var color: Color {
@@ -137,24 +136,19 @@ struct StatusBarView: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(.bar)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial)
     }
 }
 
 struct EmptyTerminalView: View {
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "terminal")
-                .font(.system(size: 36))
-                .foregroundStyle(.secondary)
-            Text("No terminal yet")
-                .font(.title3)
+        ContentUnavailableView {
+            Label("No Terminal", systemImage: "terminal")
+        } description: {
             Text("Double-click a session to connect.")
-                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
     }
 }
