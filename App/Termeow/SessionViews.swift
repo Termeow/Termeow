@@ -11,12 +11,22 @@ struct SessionSidebar: View {
             ForEach(model.groupedProfiles, id: \.name) { group in
                 Section(group.name) {
                     ForEach(group.profiles) { profile in
-                        SessionRow(profile: profile)
+                        let selected = model.selectedProfileID == profile.id
+                        SessionRow(profile: profile, selected: selected)
+                            .padding(.vertical, 2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
-                            .onTapGesture(count: 2) {
-                                model.connect(profile)
+                            .background(
+                                selected ? Color.blue : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            )
+                            .onTapGesture {
+                                model.selectedProfileID = profile.id
                             }
+                            .simultaneousGesture(
+                                TapGesture(count: 2)
+                                    .onEnded { model.connect(profile) }
+                            )
                             .tag(profile.id)
                             .contextMenu { sessionMenu(profile) }
                     }
@@ -24,6 +34,7 @@ struct SessionSidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .tint(.blue)
         .navigationTitle("Sessions")
         .searchable(text: $model.searchText, prompt: "Sessions")
         .toolbar {
@@ -59,6 +70,7 @@ struct SessionSidebar: View {
 
 struct SessionRow: View {
     let profile: SessionProfile
+    let selected: Bool
 
     var body: some View {
         Label {
@@ -66,12 +78,13 @@ struct SessionRow: View {
                 Text(profile.displayName).lineLimit(1)
                 Text("\(profile.username)@\(profile.host):\(profile.port)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(selected ? Color.white.opacity(0.8) : Color.secondary)
                     .lineLimit(1)
             }
         } icon: {
             Image(systemName: "server.rack")
         }
+        .foregroundStyle(selected ? Color.white : Color.primary)
     }
 }
 
