@@ -18,6 +18,7 @@ final class AppModel {
     var findBarVisible = false
     var findQuery = ""
     var findCaseSensitive = false
+    var sidebarVisible = true
     var statusMessage: String?
 
     let sessionStore: SessionStore

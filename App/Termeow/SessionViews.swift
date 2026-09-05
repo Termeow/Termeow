@@ -7,28 +7,50 @@ struct SessionSidebar: View {
 
     var body: some View {
         @Bindable var model = model
-        List(selection: $model.selectedProfileID) {
-            ForEach(model.groupedProfiles, id: \.name) { group in
-                Section(group.name) {
-                    ForEach(group.profiles) { profile in
-                        SessionRow(profile: profile)
-                            .tag(profile.id)
-                            .contextMenu { sessionMenu(profile) }
-                            .onTapGesture(count: 2) {
-                                model.selectedProfileID = profile.id
-                                model.connectSelected()
-                            }
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                TextField("Filter", text: $model.searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                Button("Add", systemImage: "plus") {
+                    model.beginNewSession()
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("New Session")
+                Button("Hide Sessions", systemImage: "sidebar.left") {
+                    model.sidebarVisible = false
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("Hide Sessions")
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 36)
+            .background(.bar)
+
+            Divider()
+
+            List(selection: $model.selectedProfileID) {
+                ForEach(model.groupedProfiles, id: \.name) { group in
+                    Section(group.name) {
+                        ForEach(group.profiles) { profile in
+                            SessionRow(profile: profile)
+                                .tag(profile.id)
+                                .contextMenu { sessionMenu(profile) }
+                                .onTapGesture(count: 2) {
+                                    model.selectedProfileID = profile.id
+                                    model.connectSelected()
+                                }
+                        }
                     }
                 }
             }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
         }
-        .searchable(text: $model.searchText, prompt: "Sessions")
-        .navigationTitle("Sessions")
-        .toolbar {
-            ToolbarItem {
-                Button("Add", systemImage: "plus") { model.beginNewSession() }
-            }
-        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     @ViewBuilder
