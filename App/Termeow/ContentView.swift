@@ -6,16 +6,15 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView {
-            SessionSidebar()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 360)
-        } detail: {
-            VStack(spacing: 0) {
-                TabBarView()
-                Divider()
-                detailBody
-                Divider()
-                StatusBarView()
+        Group {
+            if model.sidebarVisible {
+                HSplitView {
+                    SessionSidebar()
+                        .frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
+                    detailColumn
+                }
+            } else {
+                detailColumn
             }
         }
         .sheet(item: $model.editor) { editor in
@@ -27,6 +26,17 @@ struct ContentView: View {
         )) { prompt in
             HostKeyView(check: prompt.check)
         }
+    }
+
+    private var detailColumn: some View {
+        VStack(spacing: 0) {
+            TabBarView()
+            Divider()
+            detailBody
+            Divider()
+            StatusBarView()
+        }
+        .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -44,7 +54,15 @@ struct TabBarView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
+            if !model.sidebarVisible {
+                Button("Show Sessions") {
+                    model.sidebarVisible = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .padding(.leading, 8)
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
                     ForEach(model.tabs) { tab in
@@ -52,10 +70,10 @@ struct TabBarView: View {
                     }
                 }
                 .padding(.horizontal, 6)
-                .padding(.vertical, 4)
             }
             Spacer(minLength: 0)
         }
+        .frame(height: 36)
         .background(.bar)
     }
 }

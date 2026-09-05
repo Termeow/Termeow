@@ -32,6 +32,7 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
         self.engine = engine
         super.init(frame: .zero)
         wantsLayer = true
+        layer?.backgroundColor = scheme.background.cgColor
         layer?.contentsScale = window?.backingScaleFactor ?? 2
         measureFont()
         engine.onDirty = { [weak self] start, end in
@@ -83,9 +84,9 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
             var col = 0
             while col < line.count {
                 let cell = line[col]
-                let inverted = cell.style.inverse
-                let bg = scheme.nsColor(for: cell.style.bg, inverted: inverted)
-                let fg = scheme.nsColor(for: cell.style.fg, inverted: inverted)
+                var bg = scheme.nsColor(for: cell.style.bg, isBackground: true)
+                var fg = scheme.nsColor(for: cell.style.fg, isBackground: false)
+                if cell.style.inverse { swap(&bg, &fg) }
                 var runEnd = col + 1
                 while runEnd < line.count {
                     let next = line[runEnd]
@@ -279,6 +280,8 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attrs))
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         ctx.saveGState()
+        // Flipped NSView: Core Text glyphs are y-up, so flip around the baseline.
+        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         ctx.textPosition = CGPoint(x: origin.x, y: origin.y + baseline)
         CTLineDraw(line, ctx)
         ctx.restoreGState()

@@ -43,7 +43,12 @@ struct AppCommands: Commands {
             Button("Find…") { model.findBarVisible = true }
                 .keyboardShortcut("f", modifiers: [.command])
         }
-        CommandMenu("View") {
+        CommandGroup(after: .sidebar) {
+            Button(model.sidebarVisible ? "Hide Sessions" : "Show Sessions") {
+                model.sidebarVisible.toggle()
+            }
+            .keyboardShortcut("s", modifiers: [.command, .control])
+            Divider()
             Button("Previous Tab") { model.selectRelativeTab(-1) }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
             Button("Next Tab") { model.selectRelativeTab(1) }
