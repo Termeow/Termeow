@@ -1,0 +1,25 @@
+name: Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Swift tests
+        run: swift test
+      - name: Xcode build and test
+        run: |
+          xcodebuild test \
+            -project Termeow.xcodeproj \
+            -scheme Termeow \
+            -destination 'platform=macOS' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
