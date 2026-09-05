@@ -11,7 +11,7 @@ public struct TerminalColorScheme: @unchecked Sendable {
     public static let `default` = TerminalColorScheme(
         background: NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1),
         foreground: NSColor(srgbRed: 0.86, green: 0.87, blue: 0.88, alpha: 1),
-        cursor: NSColor.systemGreen,
+        cursor: NSColor(srgbRed: 0.86, green: 0.87, blue: 0.88, alpha: 1),
         selection: NSColor.selectedTextBackgroundColor.withAlphaComponent(0.45),
         ansi: [
             NSColor(srgbRed: 0.07, green: 0.07, blue: 0.07, alpha: 1),

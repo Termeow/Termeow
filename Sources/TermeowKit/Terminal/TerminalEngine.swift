@@ -43,9 +43,10 @@ public final class TerminalEngine: @unchecked Sendable {
                 var cells: [TerminalCell] = []
                 cells.reserveCapacity(dims.cols)
                 for col in 0..<dims.cols {
-                    let ch = terminal.getCharacter(col: col, row: row) ?? " "
-                    let attr = terminal.getCharData(col: col, row: row)?.attribute ?? .empty
-                    cells.append(TerminalCell(character: ch, style: TerminalCellStyle(attr)))
+                    let data = terminal.getCharData(col: col, row: row)
+                    let ch = data.map { terminal.getCharacter(for: $0) } ?? " "
+                    let attr = data?.attribute ?? .empty
+                    cells.append(TerminalCell(character: ch, style: TerminalCellStyle(attr), columns: Int(data?.width ?? 1)))
                 }
                 lines.append(cells)
             }
@@ -80,7 +81,7 @@ public final class TerminalEngine: @unchecked Sendable {
         var hits: [TerminalSearchHit] = []
         let needle = caseSensitive ? query : query.lowercased()
         for row in 0..<snap.rows {
-            let line = snap.lines[row].map { String($0.character) }.joined()
+            let line = snap.lines[row].filter { $0.columns != 0 }.map { String($0.character) }.joined()
             let haystack = caseSensitive ? line : line.lowercased()
             var start = haystack.startIndex
             while let range = haystack.range(of: needle, range: start..<haystack.endIndex) {
@@ -151,6 +152,7 @@ public enum TerminalColorSpec: Sendable, Equatable {
 public struct TerminalCell: Sendable, Equatable {
     public var character: Character
     public var style: TerminalCellStyle
+    public var columns: Int
 }
 
 public struct TerminalSnapshot: Sendable {
