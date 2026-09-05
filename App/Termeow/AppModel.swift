@@ -13,6 +13,8 @@ final class AppModel {
     var searchText = ""
     var editor: SessionEditorState?
     var hostKeyPrompt: HostKeyPromptState?
+    @ObservationIgnored
+    private var hostKeyContinuation: CheckedContinuation<HostKeyDecision, Never>?
     var findBarVisible = false
     var findQuery = ""
     var findCaseSensitive = false
@@ -198,13 +200,22 @@ final class AppModel {
 
     func promptHostKey(_ check: HostKeyCheck) async -> HostKeyDecision {
         await withCheckedContinuation { continuation in
-            hostKeyPrompt = HostKeyPromptState(check: check, continuation: continuation)
+            if let existing = hostKeyContinuation {
+                hostKeyContinuation = nil
+                existing.resume(returning: .cancel)
+            }
+            hostKeyContinuation = continuation
+            hostKeyPrompt = HostKeyPromptState(check: check)
         }
     }
 
     func resolveHostKey(_ decision: HostKeyDecision) {
-        hostKeyPrompt?.continuation.resume(returning: decision)
         hostKeyPrompt = nil
+        guard let continuation = hostKeyContinuation else { return }
+        hostKeyContinuation = nil
+        Task { @MainActor in
+            continuation.resume(returning: decision)
+        }
     }
 }
 
@@ -312,9 +323,9 @@ struct SessionEditorState: Identifiable {
     var secret: String
 }
 
-struct HostKeyPromptState {
+struct HostKeyPromptState: Identifiable {
+    let id = UUID()
     var check: HostKeyCheck
-    var continuation: CheckedContinuation<HostKeyDecision, Never>
 }
 
 final class HostKeyBridge: @unchecked Sendable {

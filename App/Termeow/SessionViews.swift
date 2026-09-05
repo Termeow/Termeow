@@ -73,16 +73,19 @@ struct SessionRow: View {
 
 struct SessionEditorView: View {
     @Environment(AppModel.self) private var model
+    @State private var state: SessionEditorState
+
+    init(state: SessionEditorState) {
+        _state = State(initialValue: state)
+    }
 
     var body: some View {
-        @Bindable var model = model
         NavigationStack {
-            if let state = Binding($model.editor) {
-                SessionEditorForm(state: state) {
-                    model.editor = nil
-                } onSave: {
-                    model.saveEditor()
-                }
+            SessionEditorForm(state: $state) {
+                model.editor = nil
+            } onSave: {
+                model.editor = state
+                model.saveEditor()
             }
         }
         .frame(minWidth: 460, minHeight: 420)

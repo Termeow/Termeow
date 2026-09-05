@@ -18,16 +18,14 @@ struct ContentView: View {
                 StatusBarView()
             }
         }
-        .sheet(item: $model.editor) { _ in
-            SessionEditorView()
+        .sheet(item: $model.editor) { editor in
+            SessionEditorView(state: editor)
         }
-        .sheet(isPresented: Binding(
-            get: { model.hostKeyPrompt != nil },
-            set: { if !$0 { model.resolveHostKey(.cancel) } }
-        )) {
-            if let prompt = model.hostKeyPrompt {
-                HostKeyView(check: prompt.check)
-            }
+        .sheet(item: Binding(
+            get: { model.hostKeyPrompt },
+            set: { if $0 == nil { model.resolveHostKey(.cancel) } }
+        )) { prompt in
+            HostKeyView(check: prompt.check)
         }
     }
 
