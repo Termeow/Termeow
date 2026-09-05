@@ -26,6 +26,10 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
     private var marked = ""
     private var selection: Selection?
     private var dragAnchor: (col: Int, row: Int)?
+    private var boldFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+    private var italicFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    private var boldItalicFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+    private let hitFill = NSColor.systemYellow.withAlphaComponent(0.35)
 
     public init(engine: TerminalEngine) {
         self.engine = engine
@@ -34,9 +38,9 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
         layer?.backgroundColor = scheme.background.cgColor
         layer?.contentsScale = window?.backingScaleFactor ?? 2
         measureFont()
-        engine.onDirty = { [weak self] start, end in
+        engine.onDirty = { [weak self] _, _ in
             DispatchQueue.main.async {
-                self?.applyDirty(start: start, end: end)
+                self?.needsDisplay = true
             }
         }
     }
@@ -77,6 +81,10 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
             return
         }
 
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        ctx.saveGState()
+        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+
         for row in startRow..<endRow {
             guard row < snapshot.lines.count else { continue }
             let line = snapshot.lines[row]
@@ -105,24 +113,37 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
                     width: CGFloat(cols) * cellWidth,
                     height: cellHeight
                 )
-                bg.setFill()
-                rect.fill()
-                if isSelected(col: col, row: row) || isHit(col: col, row: row) {
-                    (isHit(col: col, row: row) ? NSColor.systemYellow.withAlphaComponent(0.35) : scheme.selection).setFill()
+                if bg != scheme.background {
+                    bg.setFill()
                     rect.fill()
                 }
-                let originY = CGFloat(row) * cellHeight
+                let selected = isSelected(col: col, row: row)
+                let hit = isHit(col: col, row: row)
+                if selected || hit {
+                    (hit ? hitFill : scheme.selection).setFill()
+                    rect.fill()
+                }
+                let origin = CGPoint(x: CGFloat(col) * cellWidth, y: CGFloat(row) * cellHeight)
                 if cell.columns > 1 {
-                    drawRun(String(cell.character), fg: fg, style: cell.style, origin: CGPoint(x: CGFloat(col) * cellWidth, y: originY))
+                    drawRun(String(cell.character), fg: fg, style: cell.style, origin: origin, in: ctx)
                     col += 1
                 } else {
+                    var text = ""
+                    var visible = cell.style.underline
+                    text.reserveCapacity(runEnd - col)
                     for i in col..<runEnd {
-                        drawRun(String(line[i].character), fg: fg, style: cell.style, origin: CGPoint(x: CGFloat(i) * cellWidth, y: originY))
+                        let ch = line[i].character
+                        text.append(ch)
+                        if ch != " " { visible = true }
+                    }
+                    if visible {
+                        drawRun(text, fg: fg, style: cell.style, origin: origin, in: ctx)
                     }
                     col = runEnd
                 }
             }
         }
+        ctx.restoreGState()
         drawCursorAndMarked(in: dirtyRect)
     }
 
@@ -250,15 +271,13 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
         }
     }
 
-    private func applyDirty(start _: Int, end _: Int) {
-        snapshot = engine.snapshot()
-        needsDisplay = true
-    }
-
     private func measureFont() {
         if let named = NSFont(name: "SF Mono", size: 13) {
             font = named
         }
+        boldFont = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(.bold), size: font.pointSize) ?? font
+        italicFont = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(.italic), size: font.pointSize) ?? font
+        boldItalicFont = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits([.bold, .italic]), size: font.pointSize) ?? boldFont
         let ctFont = font as CTFont
         var glyph = CTFontGetGlyphWithName(ctFont, "M" as CFString)
         var advance = CGSize.zero
@@ -272,26 +291,24 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
         baseline = font.ascender
     }
 
-    private func drawRun(_ text: String, fg: NSColor, style: TerminalCellStyle, origin: CGPoint) {
-        var traits: NSFontDescriptor.SymbolicTraits = []
-        if style.bold { traits.insert(.bold) }
-        if style.italic { traits.insert(.italic) }
-        let drawFont = NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(traits), size: font.pointSize) ?? font
+    private func font(for style: TerminalCellStyle) -> NSFont {
+        if style.bold && style.italic { return boldItalicFont }
+        if style.bold { return boldFont }
+        if style.italic { return italicFont }
+        return font
+    }
+
+    private func drawRun(_ text: String, fg: NSColor, style: TerminalCellStyle, origin: CGPoint, in ctx: CGContext) {
         var attrs: [NSAttributedString.Key: Any] = [
-            .font: drawFont,
+            .font: font(for: style),
             .foregroundColor: style.dim ? fg.withAlphaComponent(0.65) : fg,
         ]
         if style.underline {
             attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
         }
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attrs))
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        ctx.saveGState()
-        // Flipped NSView: Core Text glyphs are y-up, so flip around the baseline.
-        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         ctx.textPosition = CGPoint(x: origin.x, y: origin.y + baseline)
         CTLineDraw(line, ctx)
-        ctx.restoreGState()
     }
 
     private func drawCursorAndMarked(in dirtyRect: NSRect) {

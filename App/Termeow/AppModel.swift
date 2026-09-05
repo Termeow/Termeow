@@ -297,8 +297,9 @@ final class ConnectionController {
             try await ssh.connect()
             state = .connected
             outputTask?.cancel()
-            outputTask = Task { [engine] in
-                for await data in ssh.output {
+            let output = ssh.output
+            outputTask = Task.detached { [engine] in
+                for await data in output {
                     engine.feed(data)
                 }
             }

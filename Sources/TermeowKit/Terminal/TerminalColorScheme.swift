@@ -7,6 +7,7 @@ public struct TerminalColorScheme: @unchecked Sendable {
     public var cursor: NSColor
     public var selection: NSColor
     public var ansi: [NSColor]
+    private let xtermCache = XtermCache()
 
     public static let `default` = TerminalColorScheme(
         background: NSColor(srgbRed: 0.10, green: 0.10, blue: 0.12, alpha: 1),
@@ -41,7 +42,11 @@ public struct TerminalColorScheme: @unchecked Sendable {
             return isBackground ? foreground : background
         case .ansi256(let code):
             if code < 16, Int(code) < ansi.count { return ansi[Int(code)] }
-            return xterm256(code)
+            let index = Int(code)
+            if let cached = xtermCache.colors[index] { return cached }
+            let color = xterm256(code)
+            xtermCache.colors[index] = color
+            return color
         case .rgb(let r, let g, let b):
             return NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
         }
@@ -59,4 +64,8 @@ public struct TerminalColorScheme: @unchecked Sendable {
         let gray = (CGFloat(Int(code) - 232) * 10 + 8) / 255
         return NSColor(srgbRed: gray, green: gray, blue: gray, alpha: 1)
     }
+}
+
+private final class XtermCache: @unchecked Sendable {
+    var colors: [NSColor?] = Array(repeating: nil, count: 256)
 }
