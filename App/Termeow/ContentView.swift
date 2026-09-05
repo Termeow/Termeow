@@ -43,7 +43,7 @@ struct ContentView: View {
     private var detailBody: some View {
         if let tab = model.selectedTab {
             TerminalContainerView(controller: tab.controller)
-                .id(tab.id)
+                .id(tab.controller.id)
         } else {
             EmptyTerminalView()
         }

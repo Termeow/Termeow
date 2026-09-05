@@ -154,17 +154,32 @@ final class AppModel {
 
     func connectSelected() {
         guard let profile = selectedProfile else { return }
-        if let existing = tabs.first(where: { $0.sessionID == profile.id }) {
-            selectedTabID = existing.id
-            existing.controller.connect()
-            return
-        }
-        openTab(for: profile, connect: true)
+        connect(profile)
     }
 
     func openSelectedInNewTab() {
         guard let profile = selectedProfile else { return }
+        openSessionInNewTab(profile)
+    }
+
+    func openSessionInNewTab(_ profile: SessionProfile) {
+        selectedProfileID = profile.id
         openTab(for: profile, connect: true)
+    }
+
+    func connect(_ profile: SessionProfile) {
+        selectedProfileID = profile.id
+        if let index = tabs.firstIndex(where: { $0.id == selectedTabID }),
+           tabs[index].controller.canReuseForConnection {
+            tabs[index].controller.disconnect()
+            let controller = ConnectionController(profile: profile, model: self)
+            tabs[index].sessionID = profile.id
+            tabs[index].controller = controller
+            persist()
+            controller.connect()
+            return
+        }
+        openSessionInNewTab(profile)
     }
 
     func openTab(for profile: SessionProfile, connect: Bool) {
@@ -270,6 +285,15 @@ final class ConnectionController {
 
     var title: String { profile.displayName }
 
+    var canReuseForConnection: Bool {
+        switch state {
+        case .disconnected, .failed:
+            true
+        case .connecting, .connected:
+            false
+        }
+    }
+
     var statusText: String {
         switch state {
         case .disconnected: "Disconnected"
@@ -280,6 +304,7 @@ final class ConnectionController {
     }
 
     func connect() {
+        _ = hostedTerminal()
         connectTask?.cancel()
         connectTask = Task { await runConnect() }
     }
