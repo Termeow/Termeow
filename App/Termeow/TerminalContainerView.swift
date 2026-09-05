@@ -46,7 +46,7 @@ struct FindBar: View {
             }
         }
         .padding(8)
-        .background(.bar)
+        .background(.ultraThinMaterial)
         .onChange(of: model.findQuery) { _, _ in runSearch() }
         .onChange(of: model.findCaseSensitive) { _, _ in runSearch() }
         .onAppear { runSearch() }

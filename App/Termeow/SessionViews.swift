@@ -7,50 +7,32 @@ struct SessionSidebar: View {
 
     var body: some View {
         @Bindable var model = model
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                TextField("Filter", text: $model.searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.small)
-                Button("Add", systemImage: "plus") {
-                    model.beginNewSession()
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .help("New Session")
-                Button("Hide Sessions", systemImage: "sidebar.left") {
-                    model.sidebarVisible = false
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .help("Hide Sessions")
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 36)
-            .background(.bar)
-
-            Divider()
-
-            List(selection: $model.selectedProfileID) {
-                ForEach(model.groupedProfiles, id: \.name) { group in
-                    Section(group.name) {
-                        ForEach(group.profiles) { profile in
-                            SessionRow(profile: profile)
-                                .tag(profile.id)
-                                .contextMenu { sessionMenu(profile) }
-                                .onTapGesture(count: 2) {
-                                    model.selectedProfileID = profile.id
-                                    model.connectSelected()
-                                }
-                        }
+        List(selection: $model.selectedProfileID) {
+            ForEach(model.groupedProfiles, id: \.name) { group in
+                Section(group.name) {
+                    ForEach(group.profiles) { profile in
+                        SessionRow(profile: profile)
+                            .tag(profile.id)
+                            .contextMenu { sessionMenu(profile) }
+                            .onTapGesture(count: 2) {
+                                model.selectedProfileID = profile.id
+                                model.connectSelected()
+                            }
                     }
                 }
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .listStyle(.sidebar)
+        .navigationTitle("Sessions")
+        .searchable(text: $model.searchText, prompt: "Sessions")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Add", systemImage: "plus") {
+                    model.beginNewSession()
+                }
+                .help("New Session")
+            }
+        }
     }
 
     @ViewBuilder
@@ -83,12 +65,16 @@ struct SessionRow: View {
     let profile: SessionProfile
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(profile.displayName).lineLimit(1)
-            Text("\(profile.username)@\(profile.host):\(profile.port)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(profile.displayName).lineLimit(1)
+                Text("\(profile.username)@\(profile.host):\(profile.port)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        } icon: {
+            Image(systemName: "server.rack")
         }
     }
 }
@@ -122,30 +108,32 @@ struct SessionEditorForm: View {
 
     var body: some View {
         Form {
-            TextField("Name", text: $state.profile.name)
-            TextField("Host", text: $state.profile.host)
-            TextField("Port", value: $state.profile.port, format: .number)
-            TextField("Username", text: $state.profile.username)
-            Picker("Authentication", selection: $state.profile.authMethod) {
-                ForEach(AuthMethod.allCases) { method in
-                    Text(method.title).tag(method)
+            Section("Connection") {
+                TextField("Name", text: $state.profile.name)
+                TextField("Host", text: $state.profile.host)
+                TextField("Port", value: $state.profile.port, format: .number)
+                TextField("Username", text: $state.profile.username)
+            }
+            Section("Authentication") {
+                Picker("Method", selection: $state.profile.authMethod) {
+                    ForEach(AuthMethod.allCases) { method in
+                        Text(method.title).tag(method)
+                    }
+                }
+                if state.profile.authMethod == .password {
+                    SecureField("Password", text: $state.secret)
+                } else {
+                    SecureField("Passphrase", text: $state.secret)
+                    LabeledContent("Private Key") {
+                        Button(keyPath.isEmpty ? keyLabel : keyPath) { chooseKey() }
+                    }
                 }
             }
-            if state.profile.authMethod == .password {
-                SecureField("Password", text: $state.secret)
-            } else {
-                SecureField("Passphrase", text: $state.secret)
-                HStack {
-                    Text(keyPath.isEmpty ? keyLabel : keyPath)
-                        .lineLimit(1)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Choose…") { chooseKey() }
-                }
+            Section {
+                TextField("Startup Command", text: $state.profile.startupCommand)
+                TextField("Group", text: $state.profile.groupName)
             }
-            TextField("Startup Command", text: $state.profile.startupCommand)
-            TextField("Group", text: $state.profile.groupName)
-            DisclosureGroup("Advanced") {
+            Section("Advanced") {
                 TextField("TERM", text: $state.profile.term)
                 TextField("Timeout", value: $state.profile.timeoutSeconds, format: .number)
                 TextField("KeepAlive", value: $state.profile.keepAliveSeconds, format: .number)
@@ -165,7 +153,7 @@ struct SessionEditorForm: View {
     }
 
     private var keyLabel: String {
-        state.profile.privateKeyBookmark == nil ? "No key selected" : "Key bookmark saved"
+        state.profile.privateKeyBookmark == nil ? "Choose…" : "Key bookmark saved"
     }
 
     private func chooseKey() {
