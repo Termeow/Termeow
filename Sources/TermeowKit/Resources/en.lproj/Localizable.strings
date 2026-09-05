@@ -1,0 +1,16 @@
+"A password or key is required." = "A password or key is required.";
+"Authentication failed." = "Authentication failed.";
+"Cancel" = "Cancel";
+"Could not connect to the server." = "Could not connect to the server.";
+"Paste" = "Paste";
+"Paste a large clipboard?" = "Paste a large clipboard?";
+"Password" = "Password";
+"Private Key" = "Private Key";
+"The connection timed out." = "The connection timed out.";
+"The connection was closed." = "The connection was closed.";
+"The host key has changed. The connection was blocked." = "The host key has changed. The connection was blocked.";
+"The host key is not trusted." = "The host key is not trusted.";
+"The host key was rejected." = "The host key was rejected.";
+"The private key could not be read." = "The private key could not be read.";
+"This paste is large or contains many lines. Send it to the remote session?" = "This paste is large or contains many lines. Send it to the remote session?";
+"This server or key uses an unsupported algorithm." = "This server or key uses an unsupported algorithm.";

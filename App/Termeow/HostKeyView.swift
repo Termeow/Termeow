@@ -36,20 +36,36 @@ struct HostKeyView: View {
 
     private var title: String {
         switch check {
-        case .unknown: "Unknown host key"
-        case .mismatch: "Host key has changed"
-        case .match: "Host key"
+        case .unknown: String(localized: "Unknown host key")
+        case .mismatch: String(localized: "Host key has changed")
+        case .match: String(localized: "Host key")
         }
     }
 
     private var bodyText: String {
         switch check {
         case .unknown(let record):
-            "The authenticity of host '\(record.host):\(record.port)' can't be established.\n\n\(record.algorithm) key fingerprint:\n\(record.fingerprintSHA256)\n\nDo you want to continue connecting?"
+            String(
+                format: String(localized: "The authenticity of host '%@:%ld' can't be established.\n\n%@ key fingerprint:\n%@\n\nDo you want to continue connecting?"),
+                locale: Locale.current,
+                record.host,
+                record.port,
+                record.algorithm,
+                record.fingerprintSHA256
+            )
         case .mismatch(let stored, let presented):
-            "WARNING: remote host identification has changed for \(presented.host):\(presented.port).\n\nSaved: \(stored.algorithm) \(stored.fingerprintSHA256)\nOffered: \(presented.algorithm) \(presented.fingerprintSHA256)"
+            String(
+                format: String(localized: "WARNING: remote host identification has changed for %@:%ld.\n\nSaved: %@ %@\nOffered: %@ %@"),
+                locale: Locale.current,
+                presented.host,
+                presented.port,
+                stored.algorithm,
+                stored.fingerprintSHA256,
+                presented.algorithm,
+                presented.fingerprintSHA256
+            )
         case .match:
-            "This host key is already trusted."
+            String(localized: "This host key is already trusted.")
         }
     }
 }
