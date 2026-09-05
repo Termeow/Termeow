@@ -13,6 +13,8 @@ struct SessionSidebar: View {
                     ForEach(group.profiles) { profile in
                         SessionRow(profile: profile)
                             .tag(profile.id)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                             .contextMenu { sessionMenu(profile) }
                             .onTapGesture(count: 2) {
                                 model.selectedProfileID = profile.id
@@ -76,6 +78,8 @@ struct SessionRow: View {
         } icon: {
             Image(systemName: "server.rack")
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
