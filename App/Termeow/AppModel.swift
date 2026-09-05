@@ -225,7 +225,6 @@ final class AppModel {
 final class ConnectionController {
     let id = UUID()
     var profile: SessionProfile
-    let engine = TerminalEngine()
     var state: SSHConnectionState = .disconnected
     var cols = 80
     var rows = 24
@@ -234,17 +233,33 @@ final class ConnectionController {
 
     private weak var model: AppModel?
     private var session: CitadelSSHSession?
-    private var outputTask: Task<Void, Never>?
     private var connectTask: Task<Void, Never>?
+    @ObservationIgnored
+    private let outbound = SSHOutbound()
+    @ObservationIgnored
+    private let inbound = TerminalInbound()
+    @ObservationIgnored
+    private var hostedView: SSHTerminalView?
 
     init(profile: SessionProfile, model: AppModel) {
         self.profile = profile
         self.model = model
-        engine.onSend = { [weak self] data in
+    }
+
+    func hostedTerminal() -> SSHTerminalView {
+        if let hostedView { return hostedView }
+        let view = SSHTerminalView()
+        view.onSend = { [outbound] data in
+            outbound.send(data)
+        }
+        view.onSizeChanged = { [weak self] cols, rows in
             Task { @MainActor in
-                try? await self?.session?.send(data)
+                self?.noteSize(cols: cols, rows: rows)
             }
         }
+        hostedView = view
+        inbound.attach(view)
+        return view
     }
 
     var title: String { profile.displayName }
@@ -265,16 +280,12 @@ final class ConnectionController {
 
     func disconnect() {
         connectTask?.cancel()
-        outputTask?.cancel()
         Task {
+            outbound.attach(nil)
             await session?.disconnect()
             session = nil
             state = .disconnected
         }
-    }
-
-    func sendRemoteOnly(_ data: Data) {
-        Task { try? await session?.send(data) }
     }
 
     func noteSize(cols: Int, rows: Int) {
@@ -286,6 +297,7 @@ final class ConnectionController {
     private func runConnect() async {
         lastError = nil
         state = .connecting
+        outbound.attach(nil)
         let secret = (try? model?.keychain.secret(id: profile.credentialID)) ?? ""
         let store = model?.hostKeyStore ?? HostKeyStore(fileURL: URL(fileURLWithPath: "/tmp/termeow-host-keys.json"))
         let bridge = HostKeyBridge(model: model)
@@ -293,23 +305,54 @@ final class ConnectionController {
             await bridge.prompt(check)
         }
         session = ssh
+        ssh.onOutput = { [inbound] data in
+            inbound.feed(data)
+        }
         do {
             try await ssh.connect()
             state = .connected
-            outputTask?.cancel()
-            let output = ssh.output
-            outputTask = Task.detached { [engine] in
-                for await data in output {
-                    engine.feed(data)
-                }
-            }
+            outbound.attach(ssh)
             try? await ssh.resize(cols: cols, rows: rows)
         } catch {
+            ssh.onOutput = nil
             let mapped = (error as? SSHError) ?? .connectionFailed
             state = .failed(mapped)
             lastError = mapped.userMessage
             AppLog.ssh.error("Connect failed")
         }
+    }
+}
+
+final class SSHOutbound: @unchecked Sendable {
+    private let continuation: AsyncStream<Data>.Continuation
+    private let lock = NSLock()
+    private var session: CitadelSSHSession?
+
+    init() {
+        let pair = AsyncStream<Data>.makeStream()
+        continuation = pair.continuation
+        Task.detached(priority: .userInitiated) { [stream = pair.stream, weak self] in
+            for await data in stream {
+                guard let session = self?.currentSession() else { continue }
+                try? await session.send(data)
+            }
+        }
+    }
+
+    func attach(_ session: CitadelSSHSession?) {
+        lock.lock()
+        self.session = session
+        lock.unlock()
+    }
+
+    func send(_ data: Data) {
+        continuation.yield(data)
+    }
+
+    private func currentSession() -> CitadelSSHSession? {
+        lock.lock()
+        defer { lock.unlock() }
+        return session
     }
 }
 

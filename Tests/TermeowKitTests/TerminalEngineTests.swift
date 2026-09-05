@@ -52,6 +52,14 @@ import Testing
     #expect(scheme.nsColor(for: .defaultInverted, isBackground: true) == scheme.foreground)
 }
 
+@Test func snapshotTracksLaterEditsOnTheSameLine() {
+    let engine = TerminalEngine(cols: 10, rows: 3)
+    engine.feed(Data("hi".utf8))
+    #expect(String(engine.snapshot().lines[0][0].character) == "h")
+    engine.feed(Data("!".utf8))
+    #expect(String(engine.snapshot().lines[0][2].character) == "!")
+}
+
 @Test func snapshotFillsEveryVisibleCell() {
     let engine = TerminalEngine(cols: 12, rows: 5)
     engine.feed(Data("ab".utf8))
