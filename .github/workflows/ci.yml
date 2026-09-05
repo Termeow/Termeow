@@ -11,8 +11,6 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
-      - name: Metal toolchain
-        run: xcodebuild -downloadComponent MetalToolchain
       - name: Swift tests
         run: swift test
       - name: Xcode build and test
