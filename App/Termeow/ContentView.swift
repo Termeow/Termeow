@@ -12,6 +12,7 @@ struct ContentView: View {
         } detail: {
             detailColumn
         }
+        .toolbar(removing: .title)
         .sheet(item: $model.editor) { editor in
             SessionEditorView(state: editor)
         }
@@ -34,14 +35,8 @@ struct ContentView: View {
         detailBody
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle(model.selectedTab?.controller.title ?? "Termeow")
-            .navigationSubtitle(subtitle)
             .safeAreaInset(edge: .top, spacing: 0) { TabBarView() }
             .safeAreaInset(edge: .bottom, spacing: 0) { StatusBarView() }
-    }
-
-    private var subtitle: String {
-        guard let tab = model.selectedTab else { return "No session" }
-        return "\(tab.controller.statusText) · \(tab.controller.cols)×\(tab.controller.rows)"
     }
 
     @ViewBuilder
