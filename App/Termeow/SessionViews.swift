@@ -12,6 +12,11 @@ struct SessionSidebar: View {
                 Section(group.name) {
                     ForEach(group.profiles) { profile in
                         SessionRow(profile: profile)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture(count: 2) {
+                                model.connect(profile)
+                            }
                             .tag(profile.id)
                             .contextMenu { sessionMenu(profile) }
                     }
@@ -19,7 +24,6 @@ struct SessionSidebar: View {
             }
         }
         .listStyle(.sidebar)
-        .background(SidebarDoubleClickHook(onDoubleClick: { model.connectSelected() }))
         .navigationTitle("Sessions")
         .searchable(text: $model.searchText, prompt: "Sessions")
         .toolbar {
@@ -35,12 +39,7 @@ struct SessionSidebar: View {
     @ViewBuilder
     private func sessionMenu(_ profile: SessionProfile) -> some View {
         Button("Connect") {
-            model.selectedProfileID = profile.id
-            model.connectSelected()
-        }
-        Button("New Tab") {
-            model.selectedProfileID = profile.id
-            model.openSelectedInNewTab()
+            model.connect(profile)
         }
         Divider()
         Button("Edit") {
@@ -72,56 +71,6 @@ struct SessionRow: View {
             }
         } icon: {
             Image(systemName: "server.rack")
-        }
-    }
-}
-
-private struct SidebarDoubleClickHook: NSViewRepresentable {
-    var onDoubleClick: () -> Void
-
-    func makeNSView(context: Context) -> HookView {
-        let view = HookView()
-        view.onDoubleClick = onDoubleClick
-        return view
-    }
-
-    func updateNSView(_ view: HookView, context: Context) {
-        view.onDoubleClick = onDoubleClick
-    }
-
-    final class HookView: NSView {
-        var onDoubleClick: (() -> Void)?
-
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            DispatchQueue.main.async { [weak self] in self?.attach() }
-        }
-
-        private func attach() {
-            guard let table = nearestTableView() else { return }
-            table.target = self
-            table.doubleAction = #selector(ping)
-        }
-
-        @objc private func ping() {
-            onDoubleClick?()
-        }
-
-        private func nearestTableView() -> NSTableView? {
-            if let table = enclosingScrollView?.documentView as? NSTableView {
-                return table
-            }
-            var current: NSView? = superview
-            while let view = current, !(view is NSSplitView) {
-                if let table = view as? NSTableView { return table }
-                if let table = view.subviews.compactMap({ $0 as? NSTableView }).first { return table }
-                let scroll = view as? NSScrollView ?? view.subviews.compactMap { $0 as? NSScrollView }.first
-                if let table = scroll?.documentView as? NSTableView { return table }
-                current = view.superview
-            }
-            return nil
         }
     }
 }
