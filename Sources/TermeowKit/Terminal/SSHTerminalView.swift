@@ -26,10 +26,31 @@ public final class SSHTerminalView: TerminalView {
         fatalError("SSHTerminalView is created in code")
     }
 
-    // SwiftTerm documents feed as safe to call from a background thread.
-    nonisolated public func feedOutput(_ data: Data) {
+    public func feedOutput(_ data: Data) {
         guard !data.isEmpty else { return }
         feed(byteArray: [UInt8](data)[...])
+    }
+
+    public override func paste(_ sender: Any) {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        guard PastePolicy.needsConfirmation(text) else {
+            super.paste(sender)
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Paste a large clipboard?"
+        alert.informativeText = "This paste is large or contains many lines. Send it to the remote session?"
+        alert.addButton(withTitle: "Paste")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        if NSPasteboard.general.string(forType: .string) == text {
+            super.paste(sender)
+        } else {
+            paste(sender)
+        }
     }
 
     public func findForward(_ query: String, caseSensitive: Bool) -> Bool {
@@ -103,28 +124,56 @@ public final class TerminalInbound: @unchecked Sendable {
     private let lock = NSLock()
     private weak var view: SSHTerminalView?
     private var pending = Data()
+    private var drainScheduled = false
 
     public init() {}
 
     public func attach(_ view: SSHTerminalView?) {
         lock.lock()
         self.view = view
-        let flush = pending
-        pending = Data()
+        let shouldScheduleDrain = view != nil && !pending.isEmpty && !drainScheduled
+        if shouldScheduleDrain {
+            drainScheduled = true
+        }
         lock.unlock()
-        if let view, !flush.isEmpty {
-            view.feedOutput(flush)
+        if shouldScheduleDrain {
+            scheduleDrain()
         }
     }
 
     public func feed(_ data: Data) {
+        guard !data.isEmpty else { return }
         lock.lock()
-        if let view {
+        pending.append(data)
+        let shouldScheduleDrain = view != nil && !drainScheduled
+        if shouldScheduleDrain {
+            drainScheduled = true
+        }
+        lock.unlock()
+        if shouldScheduleDrain {
+            scheduleDrain()
+        }
+    }
+
+    private func scheduleDrain() {
+        Task { @MainActor [weak self] in
+            self?.drainOnMainActor()
+        }
+    }
+
+    @MainActor
+    private func drainOnMainActor() {
+        while true {
+            lock.lock()
+            guard let view, !pending.isEmpty else {
+                drainScheduled = false
+                lock.unlock()
+                return
+            }
+            let data = pending
+            pending = Data()
             lock.unlock()
             view.feedOutput(data)
-            return
         }
-        pending.append(data)
-        lock.unlock()
     }
 }

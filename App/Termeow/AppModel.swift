@@ -130,6 +130,12 @@ final class AppModel {
 
     func saveEditor() {
         guard var state = editor else { return }
+        state.profile.host = state.profile.host.trimmingCharacters(in: .whitespacesAndNewlines)
+        state.profile.username = state.profile.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard state.profile.isValidForSaving else {
+            editor = state
+            return
+        }
         if state.profile.name.isEmpty {
             state.profile.name = state.profile.displayName
         }

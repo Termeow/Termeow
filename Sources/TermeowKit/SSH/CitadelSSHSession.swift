@@ -19,6 +19,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     private var client: SSHClient?
     private var writer: TTYStdinWriter?
     private var ptyTask: Task<Void, Never>?
+    private var keepAliveTask: Task<Void, Never>?
     private var connectResumed = false
 
     public init(
@@ -104,6 +105,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     }
 
     public func disconnect() async {
+        stopKeepAlive()
         ptyTask?.cancel()
         ptyTask = nil
         writer = nil
@@ -144,6 +146,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
 
     private func attach(writer: TTYStdinWriter, continuation: CheckedContinuation<Void, Error>) {
         self.writer = writer
+        startKeepAlive(using: writer)
         if !connectResumed {
             connectResumed = true
             continuation.resume()
@@ -151,6 +154,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     }
 
     private func failConnect(_ error: Error, continuation: CheckedContinuation<Void, Error>) {
+        stopKeepAlive()
         if !connectResumed {
             connectResumed = true
             continuation.resume(throwing: mapError(error))
@@ -160,10 +164,39 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     }
 
     private func markDisconnected() {
+        stopKeepAlive()
         writer = nil
         if state == .connected {
             state = .disconnected
         }
+    }
+
+    private func startKeepAlive(using writer: TTYStdinWriter) {
+        stopKeepAlive()
+        let intervalSeconds = profile.keepAliveSeconds
+        guard intervalSeconds > 0 else { return }
+
+        keepAliveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(intervalSeconds))
+                } catch {
+                    return
+                }
+                guard self != nil, !Task.isCancelled else { return }
+                do {
+                    // An empty SSH channel-data packet keeps the transport active without writing bytes to the shell.
+                    try await writer.write(ByteBuffer())
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    private func stopKeepAlive() {
+        keepAliveTask?.cancel()
+        keepAliveTask = nil
     }
 
     private func authenticationMethod() throws -> SSHAuthenticationMethod {

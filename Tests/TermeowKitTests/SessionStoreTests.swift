@@ -55,3 +55,29 @@ import Testing
     #expect(stored.publicKeyBase64 == first.publicKeyBase64)
     #expect(presented.publicKeyBase64 == changed.publicKeyBase64)
 }
+
+@Test func sessionProfileValidationRejectsInvalidConnectionSettings() {
+    var profile = SessionProfile(name: "lab", host: "example.com", username: "alice")
+    #expect(profile.isValidForSaving)
+
+    profile.port = 0
+    #expect(!profile.isValidForSaving)
+    profile.port = 65_536
+    #expect(!profile.isValidForSaving)
+    profile.port = 22
+
+    profile.timeoutSeconds = 0
+    #expect(!profile.isValidForSaving)
+    profile.timeoutSeconds = 30
+
+    profile.keepAliveSeconds = -1
+    #expect(!profile.isValidForSaving)
+    profile.keepAliveSeconds = 0
+    #expect(profile.isValidForSaving)
+
+    profile.host = "   "
+    #expect(!profile.isValidForSaving)
+    profile.host = "example.com"
+    profile.username = "\n"
+    #expect(!profile.isValidForSaving)
+}

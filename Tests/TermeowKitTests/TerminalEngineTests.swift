@@ -85,3 +85,17 @@ import Testing
     #expect(PastePolicy.needsConfirmation(String(repeating: "a", count: 3000)))
     #expect(PastePolicy.needsConfirmation("1\n2\n3\n4\n5\n6\n7\n8\n9"))
 }
+
+@Test @MainActor func terminalInboundDrainsQueuedOutputInOrder() async {
+    let inbound = TerminalInbound()
+    inbound.feed(Data("queued ".utf8))
+    inbound.feed(Data("output".utf8))
+
+    let view = SSHTerminalView()
+    inbound.attach(view)
+    for _ in 0 ..< 10 where view.searchSummary("queued output", caseSensitive: true).total == 0 {
+        await Task.yield()
+    }
+
+    #expect(view.searchSummary("queued output", caseSensitive: true).total == 1)
+}
