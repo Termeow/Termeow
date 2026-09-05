@@ -97,6 +97,39 @@ struct TabChip: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button(connectionActionTitle, systemImage: "arrow.clockwise") {
+                model.reconnectTab(tab.id)
+            }
+            .disabled(!tab.controller.canReconnect)
+            Button("Disconnect", systemImage: "network.slash") {
+                model.disconnectTab(tab.id)
+            }
+            .disabled(!tab.controller.canDisconnect)
+            Button("Duplicate Tab", systemImage: "plus.square.on.square") {
+                model.duplicateTab(tab.id)
+            }
+            Divider()
+            Button("Close Tab", systemImage: "xmark") {
+                model.closeTab(tab.id)
+            }
+            Button("Close Other Tabs", systemImage: "xmark.circle") {
+                model.closeOtherTabs(keeping: tab.id)
+            }
+            .disabled(model.tabs.count < 2)
+            Button("Close Tabs to the Right", systemImage: "arrow.right.to.line") {
+                model.closeTabsToRight(of: tab.id)
+            }
+            .disabled(!model.hasTabsToRight(of: tab.id))
+        }
+    }
+
+    private var connectionActionTitle: String {
+        if case .disconnected = tab.controller.state {
+            "Connect"
+        } else {
+            "Reconnect"
+        }
     }
 
     private var color: Color {

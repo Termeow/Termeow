@@ -210,6 +210,59 @@ final class AppModel {
         persist()
     }
 
+    func reconnectTab(_ id: WorkspaceTab.ID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let profile = tabs[index].controller.profile
+        tabs[index].controller.disconnect()
+        let controller = ConnectionController(profile: profile, model: self)
+        tabs[index].sessionID = profile.id
+        tabs[index].controller = controller
+        selectedProfileID = profile.id
+        selectedTabID = id
+        persist()
+        controller.connect()
+    }
+
+    func disconnectTab(_ id: WorkspaceTab.ID) {
+        tabs.first(where: { $0.id == id })?.controller.disconnect()
+    }
+
+    func duplicateTab(_ id: WorkspaceTab.ID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let profile = tabs[index].controller.profile
+        let controller = ConnectionController(profile: profile, model: self)
+        let duplicate = WorkspaceTab(sessionID: profile.id, controller: controller)
+        tabs.insert(duplicate, at: index + 1)
+        selectedProfileID = profile.id
+        selectedTabID = duplicate.id
+        persist()
+        controller.connect()
+    }
+
+    func closeOtherTabs(keeping id: WorkspaceTab.ID) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        tabs.lazy.filter { $0.id != id }.forEach { $0.controller.disconnect() }
+        tabs = [tab]
+        selectedTabID = id
+        persist()
+    }
+
+    func closeTabsToRight(of id: WorkspaceTab.ID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }), index + 1 < tabs.count else { return }
+        tabs[(index + 1)...].forEach { $0.controller.disconnect() }
+        let removedSelectedTab = tabs[(index + 1)...].contains { $0.id == selectedTabID }
+        tabs.removeSubrange((index + 1)...)
+        if removedSelectedTab {
+            selectedTabID = id
+        }
+        persist()
+    }
+
+    func hasTabsToRight(of id: WorkspaceTab.ID) -> Bool {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
+        return index + 1 < tabs.count
+    }
+
     func disconnectSelectedTab() {
         selectedTab?.controller.disconnect()
     }
@@ -291,6 +344,23 @@ final class ConnectionController {
             true
         case .connecting, .connected:
             false
+        }
+    }
+
+    var canDisconnect: Bool {
+        switch state {
+        case .connecting, .connected:
+            true
+        case .disconnected, .failed:
+            false
+        }
+    }
+
+    var canReconnect: Bool {
+        if case .connecting = state {
+            false
+        } else {
+            true
         }
     }
 
