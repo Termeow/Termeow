@@ -314,17 +314,43 @@ final class ConnectionController {
         ssh.onOutput = { [inbound] data in
             inbound.feed(data)
         }
+        ssh.onStateChange = { [weak self, weak ssh] newState in
+            Task { @MainActor in
+                guard let self, let ssh, self.session === ssh else { return }
+                self.applySessionState(newState, from: ssh)
+            }
+        }
         do {
             try await ssh.connect()
-            state = .connected
-            outbound.attach(ssh)
-            try? await ssh.resize(cols: cols, rows: rows)
+            guard session === ssh else {
+                await ssh.disconnect()
+                return
+            }
+            applySessionState(ssh.state, from: ssh)
+            if ssh.state == .connected {
+                try? await ssh.resize(cols: cols, rows: rows)
+            }
         } catch {
             ssh.onOutput = nil
             let mapped = (error as? SSHError) ?? .connectionFailed
             state = .failed(mapped)
             lastError = mapped.userMessage
             AppLog.ssh.error("Connect failed")
+        }
+    }
+
+    private func applySessionState(_ newState: SSHConnectionState, from ssh: CitadelSSHSession) {
+        state = newState
+        switch newState {
+        case .connected:
+            outbound.attach(ssh)
+        case .failed(let error):
+            outbound.attach(nil)
+            lastError = error.userMessage
+        case .disconnected:
+            outbound.attach(nil)
+        case .connecting:
+            break
         }
     }
 }

@@ -5,11 +5,16 @@ import NIOCore
 @preconcurrency import NIOSSH
 
 public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
-    public private(set) var state: SSHConnectionState = .disconnected
+    public var state: SSHConnectionState {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return storedState
+    }
 
     public let output: AsyncStream<Data>
     private let outputContinuation: AsyncStream<Data>.Continuation
     public var onOutput: (@Sendable (Data) -> Void)?
+    public var onStateChange: (@Sendable (SSHConnectionState) -> Void)?
 
     private let profile: SessionProfile
     private let secret: String
@@ -21,6 +26,8 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     private var ptyTask: Task<Void, Never>?
     private var keepAliveTask: Task<Void, Never>?
     private var connectResumed = false
+    private let stateLock = NSLock()
+    private var storedState: SSHConnectionState = .disconnected
 
     public init(
         profile: SessionProfile,
@@ -41,7 +48,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
         guard state == .disconnected || isFailed else {
             return
         }
-        state = .connecting
+        transition(to: .connecting)
         connectResumed = false
 
         do {
@@ -89,16 +96,16 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
                                 }
                             }
                         }
-                        self.markDisconnected()
+                        await self.markDisconnected()
                     } catch {
-                        self.failConnect(error, continuation: continuation)
+                        guard !Task.isCancelled else { return }
+                        await self.failConnect(error, continuation: continuation)
                     }
                 }
             }
-            state = .connected
             AppLog.ssh.info("SSH session connected")
         } catch {
-            state = .failed(mapError(error))
+            transition(to: .failed(mapError(error)))
             AppLog.ssh.error("SSH connect failed")
             throw mapError(error)
         }
@@ -113,7 +120,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
             try? await client.close()
         }
         client = nil
-        state = .disconnected
+        transition(to: .disconnected)
         AppLog.ssh.info("SSH session disconnected")
     }
 
@@ -147,27 +154,48 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     private func attach(writer: TTYStdinWriter, continuation: CheckedContinuation<Void, Error>) {
         self.writer = writer
         startKeepAlive(using: writer)
+        transition(to: .connected)
         if !connectResumed {
             connectResumed = true
             continuation.resume()
         }
     }
 
-    private func failConnect(_ error: Error, continuation: CheckedContinuation<Void, Error>) {
+    private func failConnect(_ error: Error, continuation: CheckedContinuation<Void, Error>) async {
         stopKeepAlive()
+        writer = nil
+        if let client {
+            try? await client.close()
+        }
+        client = nil
+        let mapped = mapError(error)
         if !connectResumed {
             connectResumed = true
-            continuation.resume(throwing: mapError(error))
+            continuation.resume(throwing: mapped)
+        } else if mapped == .connectionClosed {
+            transition(to: .disconnected)
         } else {
-            state = .failed(mapError(error))
+            transition(to: .failed(mapped))
         }
     }
 
-    private func markDisconnected() {
+    private func markDisconnected() async {
         stopKeepAlive()
         writer = nil
-        if state == .connected {
-            state = .disconnected
+        if let client {
+            try? await client.close()
+        }
+        client = nil
+        transition(to: .disconnected)
+    }
+
+    private func transition(to newState: SSHConnectionState) {
+        stateLock.lock()
+        let changed = storedState != newState
+        storedState = newState
+        stateLock.unlock()
+        if changed {
+            onStateChange?(newState)
         }
     }
 
