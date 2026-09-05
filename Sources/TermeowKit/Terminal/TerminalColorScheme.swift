@@ -33,12 +33,12 @@ public struct TerminalColorScheme: @unchecked Sendable {
         ]
     )
 
-    public func nsColor(for spec: TerminalColorSpec, inverted: Bool) -> NSColor {
+    public func nsColor(for spec: TerminalColorSpec, isBackground: Bool) -> NSColor {
         switch spec {
         case .default:
-            return inverted ? background : foreground
+            return isBackground ? background : foreground
         case .defaultInverted:
-            return inverted ? foreground : background
+            return isBackground ? foreground : background
         case .ansi256(let code):
             if code < 16, Int(code) < ansi.count { return ansi[Int(code)] }
             return xterm256(code)

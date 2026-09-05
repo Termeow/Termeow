@@ -35,6 +35,23 @@ import Testing
     #expect(engine.search(query: "Foo", caseSensitive: true).count == 1)
 }
 
+@Test func defaultCellColorsStayReadable() {
+    let engine = TerminalEngine(cols: 20, rows: 4)
+    engine.feed(Data("hi".utf8))
+    let cell = engine.snapshot().lines[0][0]
+    #expect(cell.style.fg == .default)
+    #expect(cell.style.bg == .default)
+
+    let scheme = TerminalColorScheme.default
+    let fg = scheme.nsColor(for: cell.style.fg, isBackground: false)
+    let bg = scheme.nsColor(for: cell.style.bg, isBackground: true)
+    #expect(fg != bg)
+    #expect(fg == scheme.foreground)
+    #expect(bg == scheme.background)
+    #expect(scheme.nsColor(for: .defaultInverted, isBackground: false) == scheme.background)
+    #expect(scheme.nsColor(for: .defaultInverted, isBackground: true) == scheme.foreground)
+}
+
 @Test func pastePolicyThresholds() {
     #expect(PastePolicy.needsConfirmation("short") == false)
     #expect(PastePolicy.needsConfirmation(String(repeating: "a", count: 3000)))
