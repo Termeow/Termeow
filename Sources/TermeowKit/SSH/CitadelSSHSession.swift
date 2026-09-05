@@ -9,6 +9,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
 
     public let output: AsyncStream<Data>
     private let outputContinuation: AsyncStream<Data>.Continuation
+    public var onOutput: (@Sendable (Data) -> Void)?
 
     private let profile: SessionProfile
     private let secret: String
@@ -79,7 +80,11 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
                                     buffer = bytes
                                 }
                                 if let data = buffer.getData(at: buffer.readerIndex, length: buffer.readableBytes) {
-                                    self.outputContinuation.yield(data)
+                                    if let onOutput = self.onOutput {
+                                        onOutput(data)
+                                    } else {
+                                        self.outputContinuation.yield(data)
+                                    }
                                 }
                             }
                         }
