@@ -15,6 +15,8 @@ public enum AuthMethod: String, Codable, Sendable, CaseIterable, Identifiable {
 }
 
 public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
+    public static let validPortRange = 1 ... 65_535
+
     public var id: UUID
     public var name: String
     public var host: String
@@ -64,5 +66,13 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
 
     public var displayName: String {
         name.isEmpty ? "\(username)@\(host)" : name
+    }
+
+    public var isValidForSaving: Bool {
+        !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && Self.validPortRange.contains(port)
+            && timeoutSeconds > 0
+            && keepAliveSeconds >= 0
     }
 }

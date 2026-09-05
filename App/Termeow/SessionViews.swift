@@ -159,6 +159,9 @@ struct SessionEditorForm: View {
                 TextField("Name", text: $state.profile.name)
                 TextField("Host", text: $state.profile.host)
                 TextField("Port", value: $state.profile.port, format: .number)
+                if !SessionProfile.validPortRange.contains(state.profile.port) {
+                    validationMessage("Port must be between 1 and 65535.")
+                }
                 TextField("Username", text: $state.profile.username)
             }
             Section("Authentication") {
@@ -183,7 +186,13 @@ struct SessionEditorForm: View {
             Section("Advanced") {
                 TextField("TERM", text: $state.profile.term)
                 TextField("Timeout", value: $state.profile.timeoutSeconds, format: .number)
-                TextField("KeepAlive", value: $state.profile.keepAliveSeconds, format: .number)
+                if state.profile.timeoutSeconds <= 0 {
+                    validationMessage("Timeout must be at least 1 second.")
+                }
+                TextField("Keep Alive", value: $state.profile.keepAliveSeconds, format: .number)
+                if state.profile.keepAliveSeconds < 0 {
+                    validationMessage("Keep Alive must be 0 or greater.")
+                }
             }
         }
         .formStyle(.grouped)
@@ -194,9 +203,15 @@ struct SessionEditorForm: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save", action: onSave)
-                    .disabled(state.profile.host.isEmpty || state.profile.username.isEmpty)
+                    .disabled(!state.profile.isValidForSaving)
             }
         }
+    }
+
+    private func validationMessage(_ message: String) -> some View {
+        Text(message)
+            .font(.caption)
+            .foregroundStyle(.red)
     }
 
     private var keyLabel: String {
