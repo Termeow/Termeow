@@ -18,8 +18,9 @@ public final class TerminalEngine: @unchecked Sendable {
     }
 
     public func feed(_ data: Data) {
+        let bytes = [UInt8](data)
         queue.sync {
-            terminal.feed(byteArray: [UInt8](data))
+            terminal.feed(buffer: bytes[...])
             notifyDirty()
         }
     }
@@ -42,11 +43,23 @@ public final class TerminalEngine: @unchecked Sendable {
             for row in 0..<dims.rows {
                 var cells: [TerminalCell] = []
                 cells.reserveCapacity(dims.cols)
-                for col in 0..<dims.cols {
-                    let data = terminal.getCharData(col: col, row: row)
-                    let ch = data.map { terminal.getCharacter(for: $0) } ?? " "
-                    let attr = data?.attribute ?? .empty
-                    cells.append(TerminalCell(character: ch, style: TerminalCellStyle(attr), columns: Int(data?.width ?? 1)))
+                if let line = terminal.getLine(row: row) {
+                    for col in 0..<dims.cols {
+                        if col < line.count {
+                            let data = line[col]
+                            cells.append(
+                                TerminalCell(
+                                    character: terminal.getCharacter(for: data),
+                                    style: TerminalCellStyle(data.attribute),
+                                    columns: Int(data.width)
+                                )
+                            )
+                        } else {
+                            cells.append(TerminalCell.blank)
+                        }
+                    }
+                } else {
+                    cells = Array(repeating: TerminalCell.blank, count: dims.cols)
                 }
                 lines.append(cells)
             }
@@ -131,6 +144,24 @@ public struct TerminalCellStyle: Sendable, Equatable {
         inverse = attribute.style.contains(.inverse)
         dim = attribute.style.contains(.dim)
     }
+
+    public init(
+        fg: TerminalColorSpec = .default,
+        bg: TerminalColorSpec = .default,
+        bold: Bool = false,
+        italic: Bool = false,
+        underline: Bool = false,
+        inverse: Bool = false,
+        dim: Bool = false
+    ) {
+        self.fg = fg
+        self.bg = bg
+        self.bold = bold
+        self.italic = italic
+        self.underline = underline
+        self.inverse = inverse
+        self.dim = dim
+    }
 }
 
 public enum TerminalColorSpec: Sendable, Equatable {
@@ -153,6 +184,8 @@ public struct TerminalCell: Sendable, Equatable {
     public var character: Character
     public var style: TerminalCellStyle
     public var columns: Int
+
+    static let blank = TerminalCell(character: " ", style: TerminalCellStyle(), columns: 1)
 }
 
 public struct TerminalSnapshot: Sendable {

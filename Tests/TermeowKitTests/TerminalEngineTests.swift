@@ -52,6 +52,16 @@ import Testing
     #expect(scheme.nsColor(for: .defaultInverted, isBackground: true) == scheme.foreground)
 }
 
+@Test func snapshotFillsEveryVisibleCell() {
+    let engine = TerminalEngine(cols: 12, rows: 5)
+    engine.feed(Data("ab".utf8))
+    let snap = engine.snapshot()
+    #expect(snap.cols == 12)
+    #expect(snap.rows == 5)
+    #expect(snap.lines.count == 5)
+    #expect(snap.lines.allSatisfy { $0.count == 12 })
+}
+
 @Test func wideCharactersOccupyTwoColumns() {
     let engine = TerminalEngine(cols: 20, rows: 3)
     engine.feed(Data("验收.txt".utf8))
