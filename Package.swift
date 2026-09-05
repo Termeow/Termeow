@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "TermeowKit",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v15),
     ],
@@ -20,6 +21,9 @@ let package = Package(
             dependencies: [
                 .product(name: "Citadel", package: "Citadel"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
+            ],
+            resources: [
+                .process("Resources"),
             ]
         ),
         .testTarget(

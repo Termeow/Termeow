@@ -126,9 +126,9 @@ struct TabChip: View {
 
     private var connectionActionTitle: String {
         if case .disconnected = tab.controller.state {
-            "Connect"
+            String(localized: "Connect")
         } else {
-            "Reconnect"
+            String(localized: "Reconnect")
         }
     }
 
@@ -148,9 +148,9 @@ struct StatusBarView: View {
     var body: some View {
         HStack(spacing: 12) {
             if let tab = model.selectedTab {
-                Text("\(tab.controller.profile.host):\(tab.controller.profile.port)")
+                Text(verbatim: "\(tab.controller.profile.host):\(tab.controller.profile.port)")
                 Text(tab.controller.statusText)
-                Text("\(tab.controller.cols)×\(tab.controller.rows)")
+                Text(verbatim: "\(tab.controller.cols)×\(tab.controller.rows)")
                 if let error = tab.controller.lastError {
                     Text(error).foregroundStyle(.red)
                 }

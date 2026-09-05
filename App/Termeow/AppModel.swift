@@ -53,7 +53,9 @@ final class AppModel {
     }
 
     var groupedProfiles: [(name: String, profiles: [SessionProfile])] {
-        let grouped = Dictionary(grouping: filteredProfiles) { $0.groupName.isEmpty ? "Sessions" : $0.groupName }
+        let grouped = Dictionary(grouping: filteredProfiles) {
+            $0.groupName.isEmpty ? String(localized: "Sessions") : $0.groupName
+        }
         return grouped.keys.sorted().map { name in
             (name, grouped[name]!.sorted { $0.displayName.localizedCompare($1.displayName) == .orderedAscending })
         }
@@ -93,7 +95,10 @@ final class AppModel {
     }
 
     func beginNewSession() {
-        editor = SessionEditorState(profile: SessionProfile(name: "New Session", host: "", username: ""), secret: "")
+        editor = SessionEditorState(
+            profile: SessionProfile(name: String(localized: "New Session"), host: "", username: ""),
+            secret: ""
+        )
     }
 
     func editSelected() {
@@ -107,7 +112,8 @@ final class AppModel {
         var copy = profile
         copy.id = UUID()
         copy.credentialID = UUID()
-        copy.name = profile.name.isEmpty ? "\(profile.displayName) copy" : "\(profile.name) copy"
+        let sourceName = profile.name.isEmpty ? profile.displayName : profile.name
+        copy.name = String(format: String(localized: "%@ copy"), sourceName)
         if let secret = try? keychain.secret(id: profile.credentialID) {
             try? keychain.saveSecret(secret, id: copy.credentialID)
         }
@@ -366,9 +372,9 @@ final class ConnectionController {
 
     var statusText: String {
         switch state {
-        case .disconnected: "Disconnected"
-        case .connecting: "Connecting"
-        case .connected: "Connected"
+        case .disconnected: String(localized: "Disconnected")
+        case .connecting: String(localized: "Connecting")
+        case .connected: String(localized: "Connected")
         case .failed(let error): error.userMessage
         }
     }

@@ -76,7 +76,7 @@ struct SessionRow: View {
         Label {
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile.displayName).lineLimit(1)
-                Text("\(profile.username)@\(profile.host):\(profile.port)")
+                Text(verbatim: "\(profile.username)@\(profile.host):\(profile.port)")
                     .font(.caption)
                     .foregroundStyle(selected ? Color.white.opacity(0.8) : Color.secondary)
                     .lineLimit(1)
@@ -170,14 +170,16 @@ struct SessionEditorForm: View {
         }
     }
 
-    private func validationMessage(_ message: String) -> some View {
+    private func validationMessage(_ message: LocalizedStringKey) -> some View {
         Text(message)
             .font(.caption)
             .foregroundStyle(.red)
     }
 
     private var keyLabel: String {
-        state.profile.privateKeyBookmark == nil ? "Choose…" : "Key bookmark saved"
+        state.profile.privateKeyBookmark == nil
+            ? String(localized: "Choose…")
+            : String(localized: "Key bookmark saved")
     }
 
     private func chooseKey() {
@@ -185,7 +187,7 @@ struct SessionEditorForm: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.title = "Choose Private Key"
+        panel.title = String(localized: "Choose Private Key")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             state.profile.privateKeyBookmark = try url.bookmarkData(

@@ -1,0 +1,16 @@
+"A password or key is required." = "需要密码或密钥。";
+"Authentication failed." = "身份验证失败。";
+"Cancel" = "取消";
+"Could not connect to the server." = "无法连接到服务器。";
+"Paste" = "粘贴";
+"Paste a large clipboard?" = "粘贴大量剪贴板内容？";
+"Password" = "密码";
+"Private Key" = "私钥";
+"The connection timed out." = "连接超时。";
+"The connection was closed." = "连接已关闭。";
+"The host key has changed. The connection was blocked." = "主机密钥已更改，连接已被阻止。";
+"The host key is not trusted." = "主机密钥不受信任。";
+"The host key was rejected." = "主机密钥已被拒绝。";
+"The private key could not be read." = "无法读取私钥。";
+"This paste is large or contains many lines. Send it to the remote session?" = "此次粘贴内容较大或包含多行。是否发送到远程会话？";
+"This server or key uses an unsupported algorithm." = "此服务器或密钥使用了不支持的算法。";

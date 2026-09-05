@@ -8,8 +8,8 @@ public enum AuthMethod: String, Codable, Sendable, CaseIterable, Identifiable {
 
     public var title: String {
         switch self {
-        case .password: "Password"
-        case .privateKey: "Private Key"
+        case .password: NSLocalizedString("Password", bundle: .module, comment: "SSH authentication method")
+        case .privateKey: NSLocalizedString("Private Key", bundle: .module, comment: "SSH authentication method")
         }
     }
 }

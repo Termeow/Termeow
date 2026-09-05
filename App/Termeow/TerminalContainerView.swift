@@ -33,9 +33,15 @@ struct FindBar: View {
                 .onSubmit { runSearch(forward: true) }
             Toggle("Case sensitive", isOn: $model.findCaseSensitive)
                 .toggleStyle(.checkbox)
-            Text(matchTotal == 0 ? "No results" : "\(matchIndex)/\(matchTotal)")
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 70, alignment: .leading)
+            Group {
+                if matchTotal == 0 {
+                    Text("No results")
+                } else {
+                    Text(verbatim: "\(matchIndex)/\(matchTotal)")
+                }
+            }
+            .foregroundStyle(.secondary)
+            .frame(minWidth: 70, alignment: .leading)
             Button("Previous") { runSearch(forward: false) }
             Button("Next") { runSearch(forward: true) }
             Button("Done") {

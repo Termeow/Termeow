@@ -40,10 +40,14 @@ public final class SSHTerminalView: TerminalView {
 
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Paste a large clipboard?"
-        alert.informativeText = "This paste is large or contains many lines. Send it to the remote session?"
-        alert.addButton(withTitle: "Paste")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = NSLocalizedString("Paste a large clipboard?", bundle: .module, comment: "Large paste warning title")
+        alert.informativeText = NSLocalizedString(
+            "This paste is large or contains many lines. Send it to the remote session?",
+            bundle: .module,
+            comment: "Large paste warning message"
+        )
+        alert.addButton(withTitle: NSLocalizedString("Paste", bundle: .module, comment: "Large paste confirmation"))
+        alert.addButton(withTitle: NSLocalizedString("Cancel", bundle: .module, comment: "Cancel large paste"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         if NSPasteboard.general.string(forType: .string) == text {

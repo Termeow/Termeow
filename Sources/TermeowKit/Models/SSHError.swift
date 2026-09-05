@@ -15,25 +15,25 @@ public enum SSHError: Error, Equatable, Sendable {
     public var userMessage: String {
         switch self {
         case .connectionFailed:
-            "Could not connect to the server."
+            NSLocalizedString("Could not connect to the server.", bundle: .module, comment: "SSH error")
         case .timeout:
-            "The connection timed out."
+            NSLocalizedString("The connection timed out.", bundle: .module, comment: "SSH error")
         case .authenticationFailed:
-            "Authentication failed."
+            NSLocalizedString("Authentication failed.", bundle: .module, comment: "SSH error")
         case .hostKeyChanged:
-            "The host key has changed. The connection was blocked."
+            NSLocalizedString("The host key has changed. The connection was blocked.", bundle: .module, comment: "SSH error")
         case .unknownHostKey:
-            "The host key is not trusted."
+            NSLocalizedString("The host key is not trusted.", bundle: .module, comment: "SSH error")
         case .hostKeyRejected:
-            "The host key was rejected."
+            NSLocalizedString("The host key was rejected.", bundle: .module, comment: "SSH error")
         case .unsupportedAlgorithm:
-            "This server or key uses an unsupported algorithm."
+            NSLocalizedString("This server or key uses an unsupported algorithm.", bundle: .module, comment: "SSH error")
         case .connectionClosed:
-            "The connection was closed."
+            NSLocalizedString("The connection was closed.", bundle: .module, comment: "SSH error")
         case .invalidPrivateKey:
-            "The private key could not be read."
+            NSLocalizedString("The private key could not be read.", bundle: .module, comment: "SSH error")
         case .missingCredential:
-            "A password or key is required."
+            NSLocalizedString("A password or key is required.", bundle: .module, comment: "SSH error")
         }
     }
 }
