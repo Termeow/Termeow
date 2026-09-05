@@ -23,7 +23,6 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
     private var baseline: CGFloat = 12
     private var lastCols = 0
     private var lastRows = 0
-    private var dirtyRows: ClosedRange<Int>?
     private var marked = ""
     private var selection: Selection?
     private var dragAnchor: (col: Int, row: Int)?
@@ -74,7 +73,7 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
         let startRow = max(Int(dirtyRect.minY / cellHeight), 0)
         let endRow = min(Int(ceil(dirtyRect.maxY / cellHeight)), snapshot.rows)
         guard startRow < endRow else {
-            drawCursorAndMarked()
+            drawCursorAndMarked(in: dirtyRect)
             return
         }
 
@@ -84,19 +83,26 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
             var col = 0
             while col < line.count {
                 let cell = line[col]
+                if cell.columns == 0 {
+                    col += 1
+                    continue
+                }
                 var bg = scheme.nsColor(for: cell.style.bg, isBackground: true)
                 var fg = scheme.nsColor(for: cell.style.fg, isBackground: false)
                 if cell.style.inverse { swap(&bg, &fg) }
                 var runEnd = col + 1
-                while runEnd < line.count {
-                    let next = line[runEnd]
-                    if next.style != cell.style { break }
-                    runEnd += 1
+                if cell.columns <= 1 {
+                    while runEnd < line.count {
+                        let next = line[runEnd]
+                        if next.columns != 1 || next.style != cell.style { break }
+                        runEnd += 1
+                    }
                 }
+                let cols = cell.columns > 1 ? cell.columns : (runEnd - col)
                 let rect = CGRect(
                     x: CGFloat(col) * cellWidth,
                     y: CGFloat(row) * cellHeight,
-                    width: CGFloat(runEnd - col) * cellWidth,
+                    width: CGFloat(cols) * cellWidth,
                     height: cellHeight
                 )
                 bg.setFill()
@@ -105,16 +111,19 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
                     (isHit(col: col, row: row) ? NSColor.systemYellow.withAlphaComponent(0.35) : scheme.selection).setFill()
                     rect.fill()
                 }
-                var text = ""
-                for i in col..<runEnd {
-                    text.append(line[i].character)
+                let originY = CGFloat(row) * cellHeight
+                if cell.columns > 1 {
+                    drawRun(String(cell.character), fg: fg, style: cell.style, origin: CGPoint(x: CGFloat(col) * cellWidth, y: originY))
+                    col += 1
+                } else {
+                    for i in col..<runEnd {
+                        drawRun(String(line[i].character), fg: fg, style: cell.style, origin: CGPoint(x: CGFloat(i) * cellWidth, y: originY))
+                    }
+                    col = runEnd
                 }
-                drawRun(text, fg: fg, style: cell.style, origin: CGPoint(x: rect.minX, y: rect.minY))
-                col = runEnd
             }
         }
-        drawCursorAndMarked()
-        dirtyRows = nil
+        drawCursorAndMarked(in: dirtyRect)
     }
 
     public override func keyDown(with event: NSEvent) {
@@ -241,28 +250,26 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
         }
     }
 
-    private func applyDirty(start: Int, end: Int) {
+    private func applyDirty(start _: Int, end _: Int) {
         snapshot = engine.snapshot()
-        let lo = max(min(start, end), 0)
-        let hi = max(start, end)
-        dirtyRows = lo...hi
-        let rect = CGRect(
-            x: 0,
-            y: CGFloat(lo) * cellHeight,
-            width: bounds.width,
-            height: CGFloat(hi - lo + 2) * cellHeight
-        )
-        setNeedsDisplay(rect.intersection(bounds))
+        needsDisplay = true
     }
 
     private func measureFont() {
         if let named = NSFont(name: "SF Mono", size: 13) {
             font = named
         }
-        let advance = font.maximumAdvancement
-        cellWidth = max(ceil(advance.width), 1)
-        cellHeight = max(ceil(font.ascender - font.descender + font.leading), 1)
-        baseline = ceil(font.ascender)
+        let ctFont = font as CTFont
+        var glyph = CTFontGetGlyphWithName(ctFont, "M" as CFString)
+        var advance = CGSize.zero
+        if glyph != 0 {
+            CTFontGetAdvancesForGlyphs(ctFont, .default, &glyph, &advance, 1)
+            cellWidth = max(advance.width, 1)
+        } else {
+            cellWidth = max(("M" as NSString).size(withAttributes: [.font: font]).width, 1)
+        }
+        cellHeight = max(font.ascender - font.descender + font.leading, 1)
+        baseline = font.ascender
     }
 
     private func drawRun(_ text: String, fg: NSColor, style: TerminalCellStyle, origin: CGPoint) {
@@ -287,20 +294,24 @@ public final class TerminalRendererView: NSView, @preconcurrency NSTextInputClie
         ctx.restoreGState()
     }
 
-    private func drawCursorAndMarked() {
+    private func drawCursorAndMarked(in dirtyRect: NSRect) {
+        let col = snapshot.cursorCol
+        let row = snapshot.cursorRow
+        let inkHeight = max(ceil(font.ascender - font.descender), 1)
         let cursor = CGRect(
-            x: CGFloat(snapshot.cursorCol) * cellWidth,
-            y: CGFloat(snapshot.cursorRow) * cellHeight,
-            width: cellWidth,
-            height: cellHeight
+            x: CGFloat(col) * cellWidth,
+            y: CGFloat(row) * cellHeight,
+            width: 2,
+            height: inkHeight
         )
-        scheme.cursor.withAlphaComponent(0.85).setFill()
+        guard cursor.intersects(dirtyRect) else { return }
+        scheme.cursor.setFill()
         cursor.fill()
         if !marked.isEmpty {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: scheme.foreground,
-                .backgroundColor: NSColor.systemBlue.withAlphaComponent(0.25),
+                .backgroundColor: scheme.cursor.withAlphaComponent(0.28),
                 .underlineStyle: NSUnderlineStyle.single.rawValue,
             ]
             (marked as NSString).draw(at: CGPoint(x: cursor.minX, y: cursor.minY), withAttributes: attrs)

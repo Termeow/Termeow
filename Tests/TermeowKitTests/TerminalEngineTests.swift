@@ -52,6 +52,16 @@ import Testing
     #expect(scheme.nsColor(for: .defaultInverted, isBackground: true) == scheme.foreground)
 }
 
+@Test func wideCharactersOccupyTwoColumns() {
+    let engine = TerminalEngine(cols: 20, rows: 3)
+    engine.feed(Data("验收.txt".utf8))
+    let line = engine.snapshot().lines[0]
+    #expect(String(line[0].character) == "验")
+    #expect(line[0].columns == 2)
+    #expect(line[1].columns == 0)
+    #expect(engine.search(query: "验收", caseSensitive: true).count == 1)
+}
+
 @Test func pastePolicyThresholds() {
     #expect(PastePolicy.needsConfirmation("short") == false)
     #expect(PastePolicy.needsConfirmation(String(repeating: "a", count: 3000)))
