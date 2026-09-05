@@ -5,6 +5,10 @@ import SwiftUI
 struct TermeowApp: App {
     @State private var model = AppModel()
 
+    init() {
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -13,7 +17,7 @@ struct TermeowApp: App {
         }
         .defaultSize(width: 1100, height: 720)
         .windowStyle(.automatic)
-        .windowToolbarStyle(.unified)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             AppCommands(model: model)
         }
