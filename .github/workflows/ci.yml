@@ -10,7 +10,7 @@ jobs:
     name: Unit tests
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Metal toolchain
         run: xcodebuild -downloadComponent MetalToolchain
       - name: Swift tests
