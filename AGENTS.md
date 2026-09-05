@@ -27,3 +27,5 @@ Also English by convention: Conventional Commit type prefixes, identifiers, type
 - Do not commit Keychain data, private keys, or signing certificates.
 
 Workflow (branches, PRs, releases, hotfixes) follows the workspace `AGENTS.md` next to this clone. Commits and PR text stay English.
+
+This repo has Swift packages and GitHub Actions, so keep `.github/dependabot.yml`. PRs target `develop`. Add an ecosystem entry only when that manifest exists.
