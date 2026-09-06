@@ -6,6 +6,17 @@ struct HostKeyView: View {
     let check: HostKeyCheck
 
     var body: some View {
+        HostKeyDecisionView(check: check) { decision in
+            model.resolveHostKey(decision)
+        }
+    }
+}
+
+struct HostKeyDecisionView: View {
+    let check: HostKeyCheck
+    let onResolve: (HostKeyDecision) -> Void
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title)
                 .font(.headline)
@@ -18,10 +29,10 @@ struct HostKeyView: View {
             }
             HStack {
                 Spacer()
-                Button("Cancel") { model.resolveHostKey(.cancel) }
+                Button("Cancel") { onResolve(.cancel) }
                     .keyboardShortcut(.cancelAction)
-                Button("Connect Once") { model.resolveHostKey(.connectOnce) }
-                Button("Trust and Save") { model.resolveHostKey(.trustAndSave) }
+                Button("Connect Once") { onResolve(.connectOnce) }
+                Button("Trust and Save") { onResolve(.trustAndSave) }
                     .keyboardShortcut(.defaultAction)
             }
         }
