@@ -758,6 +758,8 @@ final class SFTPHostKeyBridge: @unchecked Sendable {
 
 @MainActor
 final class SFTPWindowController: NSWindowController, NSWindowDelegate {
+    private static let preferredContentSize = NSSize(width: 1180, height: 720)
+
     let id: UUID
     private let browser: SFTPBrowserModel
     private let promptCoordinator: SFTPHostKeyPromptCoordinator
@@ -777,7 +779,7 @@ final class SFTPWindowController: NSWindowController, NSWindowDelegate {
         let rootView = SFTPBrowserView(browser: browser, promptCoordinator: promptCoordinator)
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 720),
+            contentRect: NSRect(origin: .zero, size: Self.preferredContentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -785,10 +787,12 @@ final class SFTPWindowController: NSWindowController, NSWindowDelegate {
         window.title = String(format: String(localized: "SFTP — %@"), browser.profile.displayName)
         window.contentViewController = hostingController
         window.minSize = NSSize(width: 900, height: 560)
+        window.setContentSize(Self.preferredContentSize)
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
-        window.center()
+        window.isRestorable = false
         super.init(window: window)
+        shouldCascadeWindows = false
         window.delegate = self
     }
 
@@ -798,9 +802,45 @@ final class SFTPWindowController: NSWindowController, NSWindowDelegate {
     }
 
     override func showWindow(_ sender: Any?) {
-        super.showWindow(sender)
-        window?.makeKeyAndOrderFront(sender)
+        guard let window else { return }
+        let targetScreen = presentationScreen
+        window.contentView?.layoutSubtreeIfNeeded()
+        size(window, toFit: targetScreen)
+        center(window, on: targetScreen)
+        window.makeKeyAndOrderFront(sender)
         NSApp.activate()
+    }
+
+    private var presentationScreen: NSScreen? {
+        if let screen = NSApp.keyWindow?.screen ?? NSApp.mainWindow?.screen {
+            return screen
+        }
+        let pointerLocation = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(pointerLocation, $0.frame, false) }
+            ?? NSScreen.main
+    }
+
+    private func size(_ window: NSWindow, toFit screen: NSScreen?) {
+        window.setContentSize(Self.preferredContentSize)
+        guard let screen else { return }
+        var frame = window.frame
+        frame.size.width = min(frame.width, screen.visibleFrame.width)
+        frame.size.height = min(frame.height, screen.visibleFrame.height)
+        window.setFrame(frame, display: false)
+    }
+
+    private func center(_ window: NSWindow, on screen: NSScreen?) {
+        guard let screen else {
+            window.center()
+            return
+        }
+        let visibleFrame = screen.visibleFrame
+        let windowFrame = window.frame
+        let origin = NSPoint(
+            x: visibleFrame.midX - windowFrame.width / 2,
+            y: visibleFrame.midY - windowFrame.height / 2
+        )
+        window.setFrameOrigin(origin)
     }
 
     func windowWillClose(_ notification: Notification) {
