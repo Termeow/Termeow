@@ -1,5 +1,4 @@
 @preconcurrency import Citadel
-import Crypto
 import Foundation
 import NIOCore
 @preconcurrency import NIOSSH
@@ -52,22 +51,12 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
         connectResumed = false
 
         do {
-            let auth = AuthBox(try authenticationMethod())
-            let validator = PromptingHostKeyValidator(
-                host: profile.host,
-                port: profile.port,
-                store: hostKeyStore,
+            let client = try await CitadelConnectionFactory.connect(
+                profile: profile,
+                secret: secret,
+                hostKeyStore: hostKeyStore,
                 prompt: prompt
             )
-            var settings = SSHClientSettings(
-                host: profile.host,
-                port: profile.port,
-                authenticationMethod: { auth.method },
-                hostKeyValidator: .custom(validator)
-            )
-            settings.connectTimeout = .seconds(Int64(max(profile.timeoutSeconds, 1)))
-
-            let client = try await SSHClient.connect(to: settings)
             self.client = client
 
             let request = ptyRequest
@@ -105,9 +94,9 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
             }
             AppLog.ssh.info("SSH session connected")
         } catch {
-            transition(to: .failed(mapError(error)))
+            transition(to: .failed(CitadelConnectionFactory.mapError(error)))
             AppLog.ssh.error("SSH connect failed")
-            throw mapError(error)
+            throw CitadelConnectionFactory.mapError(error)
         }
     }
 
@@ -168,7 +157,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
             try? await client.close()
         }
         client = nil
-        let mapped = mapError(error)
+        let mapped = CitadelConnectionFactory.mapError(error)
         if !connectResumed {
             connectResumed = true
             continuation.resume(throwing: mapped)
@@ -227,60 +216,4 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
         keepAliveTask = nil
     }
 
-    private func authenticationMethod() throws -> SSHAuthenticationMethod {
-        switch profile.authMethod {
-        case .password:
-            guard !secret.isEmpty else { throw SSHError.missingCredential }
-            return .passwordBased(username: profile.username, password: secret)
-        case .privateKey:
-            return try privateKeyAuth()
-        }
-    }
-
-    private func privateKeyAuth() throws -> SSHAuthenticationMethod {
-        guard let bookmark = profile.privateKeyBookmark else { throw SSHError.invalidPrivateKey }
-        var stale = false
-        let url = try URL(
-            resolvingBookmarkData: bookmark,
-            options: [.withSecurityScope],
-            relativeTo: nil,
-            bookmarkDataIsStale: &stale
-        )
-        guard url.startAccessingSecurityScopedResource() else { throw SSHError.invalidPrivateKey }
-        defer { url.stopAccessingSecurityScopedResource() }
-        let keyText = try String(contentsOf: url, encoding: .utf8)
-        let passphrase = secret.isEmpty ? nil : Data(secret.utf8)
-        let type = try SSHKeyDetection.detectPrivateKeyType(from: keyText)
-        switch type {
-        case .ed25519:
-            let key = try Curve25519.Signing.PrivateKey(sshEd25519: keyText, decryptionKey: passphrase)
-            return .ed25519(username: profile.username, privateKey: key)
-        case .ecdsaP256:
-            throw SSHError.unsupportedAlgorithm
-        case .ecdsaP384:
-            throw SSHError.unsupportedAlgorithm
-        case .ecdsaP521:
-            throw SSHError.unsupportedAlgorithm
-        case .rsa:
-            let key = try Insecure.RSA.PrivateKey(sshRsa: keyText, decryptionKey: passphrase)
-            return .rsa(username: profile.username, privateKey: key)
-        default:
-            throw SSHError.unsupportedAlgorithm
-        }
-    }
-
-    private func mapError(_ error: Error) -> SSHError {
-        if let ssh = error as? SSHError { return ssh }
-        if error is InvalidHostKey { return .unknownHostKey }
-        let text = String(describing: error).lowercased()
-        if text.contains("auth") { return .authenticationFailed }
-        if text.contains("timeout") { return .timeout }
-        if text.contains("closed") { return .connectionClosed }
-        return .connectionFailed
-    }
-}
-
-private struct AuthBox: @unchecked Sendable {
-    let method: SSHAuthenticationMethod
-    init(_ method: SSHAuthenticationMethod) { self.method = method }
 }

@@ -40,6 +40,8 @@ struct AppCommands: Commands {
             Button("Connect") { model.connectSelected() }
                 .keyboardShortcut(.return, modifiers: [.command])
             Button("Disconnect") { model.disconnectSelectedTab() }
+            Button("Open SFTP") { model.openSelectedSFTP() }
+                .disabled(model.sftpContextProfile == nil)
             Divider()
             Button("Edit Session…") { model.editSelected() }
             Button("Duplicate Session") { model.duplicateSelected() }

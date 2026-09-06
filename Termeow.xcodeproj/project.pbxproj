@@ -19,6 +19,8 @@
 		A10000000000000000000047 /* KeychainStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000057 /* KeychainStoreTests.swift */; };
 		A10000000000000000000048 /* TerminalEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000058 /* TerminalEngineTests.swift */; };
 		A10000000000000000000049 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000059 /* Localizable.strings */; };
+		A1000000000000000000004A /* SFTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005C /* SFTPView.swift */; };
+		A1000000000000000000004B /* SFTPPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005D /* SFTPPathTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +37,8 @@
 		A10000000000000000000058 /* TerminalEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalEngineTests.swift; sourceTree = "<group>"; };
 		A1000000000000000000005A /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		A1000000000000000000005B /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		A1000000000000000000005C /* SFTPView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPView.swift; sourceTree = "<group>"; };
+		A1000000000000000000005D /* SFTPPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPPathTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,6 +80,7 @@
 				A10000000000000000000053 /* SessionViews.swift */,
 				A10000000000000000000054 /* TerminalContainerView.swift */,
 				A10000000000000000000055 /* HostKeyView.swift */,
+				A1000000000000000000005C /* SFTPView.swift */,
 			);
 			name = App;
 			path = App/Termeow;
@@ -96,6 +101,7 @@
 				A10000000000000000000056 /* SessionStoreTests.swift */,
 				A10000000000000000000057 /* KeychainStoreTests.swift */,
 				A10000000000000000000058 /* TerminalEngineTests.swift */,
+				A1000000000000000000005D /* SFTPPathTests.swift */,
 			);
 			name = Tests;
 			path = Tests/TermeowKitTests;
@@ -198,6 +204,7 @@
 				A10000000000000000000043 /* SessionViews.swift in Sources */,
 				A10000000000000000000044 /* TerminalContainerView.swift in Sources */,
 				A10000000000000000000045 /* HostKeyView.swift in Sources */,
+				A1000000000000000000004A /* SFTPView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -208,6 +215,7 @@
 				A10000000000000000000046 /* SessionStoreTests.swift in Sources */,
 				A10000000000000000000047 /* KeychainStoreTests.swift in Sources */,
 				A10000000000000000000048 /* TerminalEngineTests.swift in Sources */,
+				A1000000000000000000004B /* SFTPPathTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
