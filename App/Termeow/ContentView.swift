@@ -19,6 +19,16 @@ struct ContentView: View {
         .sheet(item: hostKeyPromptBinding) { prompt in
             HostKeyView(check: prompt.check)
         }
+        .alert(item: $model.sessionPendingDeletion) { profile in
+            Alert(
+                title: Text(String(format: String(localized: "Delete “%@”?"), profile.displayName)),
+                message: Text("This removes the saved session and closes its open tabs. This action cannot be undone."),
+                primaryButton: .destructive(Text("Delete")) {
+                    model.confirmDelete(profile)
+                },
+                secondaryButton: .cancel()
+            )
+        }
     }
 
     private var visibility: Binding<NavigationSplitViewVisibility> {

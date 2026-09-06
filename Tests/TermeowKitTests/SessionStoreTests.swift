@@ -24,6 +24,42 @@ import Testing
     #expect(!raw.contains("BEGIN RSA PRIVATE KEY"))
 }
 
+@Test func sessionLibraryPersistsEmptyGroups() throws {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("termeow-library-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let profile = SessionProfile(
+        name: "production",
+        host: "example.com",
+        username: "alice",
+        groupName: "Servers"
+    )
+    let library = SessionLibrary(profiles: [profile], groups: ["Servers", "Empty Group"])
+    let store = SessionStore(fileURL: url)
+
+    try store.saveLibrary(library)
+    #expect(try store.loadLibrary() == library)
+}
+
+@Test func sessionLibraryMigratesLegacyProfileArray() throws {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("termeow-legacy-sessions-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let profile = SessionProfile(
+        name: "production",
+        host: "example.com",
+        username: "alice",
+        groupName: "Servers"
+    )
+    try JSONEncoder().encode([profile]).write(to: url)
+
+    let library = try SessionStore(fileURL: url).loadLibrary()
+    #expect(library.profiles == [profile])
+    #expect(library.groups == ["Servers"])
+}
+
 @Test func hostKeyStoreUnknownMatchMismatch() throws {
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("termeow-hostkeys-\(UUID().uuidString).json")
@@ -80,4 +116,16 @@ import Testing
     profile.host = "example.com"
     profile.username = "\n"
     #expect(!profile.isValidForSaving)
+}
+
+@Test func sessionProfileDecodesWithoutLastUsedDate() throws {
+    let profile = SessionProfile(name: "lab", host: "example.com", username: "alice")
+    let encoded = try JSONEncoder().encode(profile)
+    var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    object.removeValue(forKey: "lastUsedAt")
+
+    let legacyData = try JSONSerialization.data(withJSONObject: object)
+    let decoded = try JSONDecoder().decode(SessionProfile.self, from: legacyData)
+    #expect(decoded.lastUsedAt == nil)
+    #expect(decoded.displayName == "lab")
 }

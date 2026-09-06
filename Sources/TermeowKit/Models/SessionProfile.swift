@@ -27,6 +27,7 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
     public var startupCommand: String
     public var groupName: String
     public var isFavorite: Bool
+    public var lastUsedAt: Date?
     public var credentialID: UUID
     public var keepAliveSeconds: Int
     public var timeoutSeconds: Int
@@ -43,6 +44,7 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         startupCommand: String = "",
         groupName: String = "",
         isFavorite: Bool = false,
+        lastUsedAt: Date? = nil,
         credentialID: UUID = UUID(),
         keepAliveSeconds: Int = 60,
         timeoutSeconds: Int = 30,
@@ -58,6 +60,7 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         self.startupCommand = startupCommand
         self.groupName = groupName
         self.isFavorite = isFavorite
+        self.lastUsedAt = lastUsedAt
         self.credentialID = credentialID
         self.keepAliveSeconds = keepAliveSeconds
         self.timeoutSeconds = timeoutSeconds
