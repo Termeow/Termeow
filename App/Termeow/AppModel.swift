@@ -7,11 +7,13 @@ import TermeowKit
 @Observable
 final class AppModel {
     var profiles: [SessionProfile] = []
+    var sessionGroups: [String] = []
     var tabs: [WorkspaceTab] = []
     var selectedProfileID: SessionProfile.ID?
     var selectedTabID: WorkspaceTab.ID?
     var searchText = ""
     var editor: SessionEditorState?
+    var sessionPendingDeletion: SessionProfile?
     var hostKeyPrompt: HostKeyPromptState?
     @ObservationIgnored
     private var hostKeyContinuation: CheckedContinuation<HostKeyDecision, Never>?
@@ -56,24 +58,31 @@ final class AppModel {
                 || $0.host.localizedCaseInsensitiveContains(query)
                 || $0.username.localizedCaseInsensitiveContains(query)
                 || $0.groupName.localizedCaseInsensitiveContains(query)
+                || String($0.port).localizedCaseInsensitiveContains(query)
         }
     }
 
-    var groupedProfiles: [(name: String, profiles: [SessionProfile])] {
-        let grouped = Dictionary(grouping: filteredProfiles) {
-            $0.groupName.isEmpty ? String(localized: "Sessions") : $0.groupName
-        }
-        return grouped.keys.sorted().map { name in
-            (name, grouped[name]!.sorted { $0.displayName.localizedCompare($1.displayName) == .orderedAscending })
-        }
+    var sessionGroupNames: [String] {
+        normalizedSessionGroupNames(sessionGroups + profiles.map(\.groupName))
+    }
+
+    func tabStates(for profileID: SessionProfile.ID) -> [SSHConnectionState] {
+        Array(
+            tabs.lazy
+                .filter { $0.sessionID == profileID }
+                .map(\.controller.state)
+        )
     }
 
     func reload() {
         do {
-            profiles = try sessionStore.load()
+            let library = try sessionStore.loadLibrary()
+            profiles = library.profiles
+            sessionGroups = normalizedSessionGroupNames(library.groups + library.profiles.map(\.groupName))
         } catch {
             AppLog.storage.error("Failed to load sessions")
             profiles = []
+            sessionGroups = []
         }
         let snapshot = (try? workspaceStore.load()) ?? WorkspaceSnapshot()
         selectedProfileID = snapshot.selectedProfileID ?? profiles.first?.id
@@ -89,7 +98,7 @@ final class AppModel {
 
     func persist() {
         do {
-            try sessionStore.save(profiles)
+            try sessionStore.saveLibrary(SessionLibrary(profiles: profiles, groups: sessionGroupNames))
             try workspaceStore.save(
                 WorkspaceSnapshot(
                     openSessionIDs: tabs.map(\.sessionID),
@@ -101,9 +110,14 @@ final class AppModel {
         }
     }
 
-    func beginNewSession() {
+    func beginNewSession(inGroup groupName: String = "") {
         editor = SessionEditorState(
-            profile: SessionProfile(name: String(localized: "New Session"), host: "", username: ""),
+            profile: SessionProfile(
+                name: String(localized: "New Session"),
+                host: "",
+                username: "",
+                groupName: groupName
+            ),
             secret: ""
         )
     }
@@ -119,6 +133,8 @@ final class AppModel {
         var copy = profile
         copy.id = UUID()
         copy.credentialID = UUID()
+        copy.isFavorite = false
+        copy.lastUsedAt = nil
         let sourceName = profile.name.isEmpty ? profile.displayName : profile.name
         copy.name = String(format: String(localized: "%@ copy"), sourceName)
         if let secret = try? keychain.secret(id: profile.credentialID) {
@@ -130,21 +146,104 @@ final class AppModel {
     }
 
     func deleteSelected() {
-        guard let id = selectedProfileID else { return }
-        if let profile = profiles.first(where: { $0.id == id }) {
-            try? keychain.deleteSecret(id: profile.credentialID)
+        sessionPendingDeletion = selectedProfile
+    }
+
+    func confirmDelete(_ profile: SessionProfile) {
+        guard profiles.contains(where: { $0.id == profile.id }) else { return }
+        try? keychain.deleteSecret(id: profile.credentialID)
+        let removedTabIDs = Set(tabs.lazy.filter { $0.sessionID == profile.id }.map(\.id))
+        tabs.lazy.filter { $0.sessionID == profile.id }.forEach { $0.controller.disconnect() }
+        tabs.removeAll { $0.sessionID == profile.id }
+        profiles.removeAll { $0.id == profile.id }
+        if selectedProfileID == profile.id {
+            selectedProfileID = profiles.first?.id
         }
-        profiles.removeAll { $0.id == id }
-        tabs.removeAll { $0.sessionID == id }
-        selectedProfileID = profiles.first?.id
-        selectedTabID = tabs.first?.id
+        if let selectedTabID, removedTabIDs.contains(selectedTabID) {
+            self.selectedTabID = tabs.first?.id
+        }
+        sessionPendingDeletion = nil
         persist()
+    }
+
+    func rename(_ profile: SessionProfile, to name: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        updateProfile(profile.id) { $0.name = trimmedName }
+    }
+
+    func toggleFavorite(_ profile: SessionProfile) {
+        updateProfile(profile.id) { $0.isFavorite.toggle() }
+    }
+
+    func move(_ profile: SessionProfile, toGroup groupName: String) {
+        let trimmedGroupName = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
+        addSessionGroupIfNeeded(trimmedGroupName)
+        updateProfile(profile.id) { $0.groupName = trimmedGroupName }
+    }
+
+    func canUseSessionGroupName(_ name: String, excluding currentName: String? = nil) -> Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return false }
+        return !sessionGroupNames.contains { existingName in
+            guard existingName.localizedCaseInsensitiveCompare(trimmedName) == .orderedSame else {
+                return false
+            }
+            guard let currentName else { return true }
+            return existingName.localizedCaseInsensitiveCompare(currentName) != .orderedSame
+        }
+    }
+
+    func createSessionGroup(_ name: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canUseSessionGroupName(trimmedName) else { return }
+        sessionGroups.append(trimmedName)
+        persist()
+    }
+
+    func renameSessionGroup(_ groupName: String, to newName: String) {
+        let trimmedName = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canUseSessionGroupName(trimmedName, excluding: groupName) else { return }
+        sessionGroups.removeAll {
+            $0.localizedCaseInsensitiveCompare(groupName) == .orderedSame
+        }
+        sessionGroups.append(trimmedName)
+        for index in profiles.indices
+        where profiles[index].groupName.localizedCaseInsensitiveCompare(groupName) == .orderedSame {
+            profiles[index].groupName = trimmedName
+            synchronizeOpenTabs(with: profiles[index])
+        }
+        persist()
+    }
+
+    func deleteSessionGroup(_ groupName: String) {
+        sessionGroups.removeAll {
+            $0.localizedCaseInsensitiveCompare(groupName) == .orderedSame
+        }
+        for index in profiles.indices
+        where profiles[index].groupName.localizedCaseInsensitiveCompare(groupName) == .orderedSame {
+            profiles[index].groupName = ""
+            synchronizeOpenTabs(with: profiles[index])
+        }
+        persist()
+    }
+
+    func copySSHCommand(_ profile: SessionProfile) {
+        let destination = shellArgument("\(profile.username)@\(profile.host)")
+        let command = profile.port == 22
+            ? "ssh \(destination)"
+            : "ssh -p \(profile.port) \(destination)"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        statusMessage = String(localized: "SSH command copied")
     }
 
     func saveEditor() {
         guard var state = editor else { return }
         state.profile.host = state.profile.host.trimmingCharacters(in: .whitespacesAndNewlines)
         state.profile.username = state.profile.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        state.profile.name = state.profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        state.profile.groupName = state.profile.groupName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard state.profile.isValidForSaving else {
             editor = state
             return
@@ -152,8 +251,10 @@ final class AppModel {
         if state.profile.name.isEmpty {
             state.profile.name = state.profile.displayName
         }
+        addSessionGroupIfNeeded(state.profile.groupName)
         if let index = profiles.firstIndex(where: { $0.id == state.profile.id }) {
             profiles[index] = state.profile
+            synchronizeOpenTabs(with: state.profile)
         } else {
             profiles.append(state.profile)
         }
@@ -220,22 +321,24 @@ final class AppModel {
 
     func openSessionInNewTab(_ profile: SessionProfile) {
         selectedProfileID = profile.id
-        openTab(for: profile, connect: true)
+        let currentProfile = markSessionUsed(profile.id) ?? profile
+        openTab(for: currentProfile, connect: true)
     }
 
     func connect(_ profile: SessionProfile) {
         selectedProfileID = profile.id
+        let currentProfile = markSessionUsed(profile.id) ?? profile
         if let index = tabs.firstIndex(where: { $0.id == selectedTabID }),
            tabs[index].controller.canReuseForConnection {
             tabs[index].controller.disconnect()
-            let controller = ConnectionController(profile: profile, model: self)
-            tabs[index].sessionID = profile.id
+            let controller = ConnectionController(profile: currentProfile, model: self)
+            tabs[index].sessionID = currentProfile.id
             tabs[index].controller = controller
             persist()
             controller.connect()
             return
         }
-        openSessionInNewTab(profile)
+        openTab(for: currentProfile, connect: true)
     }
 
     func openTab(for profile: SessionProfile, connect: Bool) {
@@ -268,7 +371,8 @@ final class AppModel {
 
     func reconnectTab(_ id: WorkspaceTab.ID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let profile = tabs[index].controller.profile
+        let storedProfile = tabs[index].controller.profile
+        let profile = markSessionUsed(storedProfile.id) ?? storedProfile
         tabs[index].controller.disconnect()
         let controller = ConnectionController(profile: profile, model: self)
         tabs[index].sessionID = profile.id
@@ -285,7 +389,8 @@ final class AppModel {
 
     func duplicateTab(_ id: WorkspaceTab.ID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let profile = tabs[index].controller.profile
+        let storedProfile = tabs[index].controller.profile
+        let profile = markSessionUsed(storedProfile.id) ?? storedProfile
         let controller = ConnectionController(profile: profile, model: self)
         let duplicate = WorkspaceTab(sessionID: profile.id, controller: controller)
         tabs.insert(duplicate, at: index + 1)
@@ -327,6 +432,59 @@ final class AppModel {
         guard let id = selectedTabID, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         let next = (index + delta + tabs.count) % max(tabs.count, 1)
         selectedTabID = tabs[next].id
+    }
+
+    private func updateProfile(_ id: SessionProfile.ID, mutation: (inout SessionProfile) -> Void) {
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else { return }
+        mutation(&profiles[index])
+        synchronizeOpenTabs(with: profiles[index])
+        persist()
+    }
+
+    private func addSessionGroupIfNeeded(_ groupName: String) {
+        guard !groupName.isEmpty,
+              !sessionGroups.contains(where: {
+                  $0.localizedCaseInsensitiveCompare(groupName) == .orderedSame
+              })
+        else { return }
+        sessionGroups.append(groupName)
+    }
+
+    private func normalizedSessionGroupNames(_ groupNames: [String]) -> [String] {
+        var result: [String] = []
+        for rawName in groupNames {
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty,
+                  !result.contains(where: {
+                      $0.localizedCaseInsensitiveCompare(name) == .orderedSame
+                  })
+            else { continue }
+            result.append(name)
+        }
+        return result.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private func synchronizeOpenTabs(with profile: SessionProfile) {
+        for index in tabs.indices where tabs[index].sessionID == profile.id {
+            tabs[index].controller.profile = profile
+        }
+    }
+
+    @discardableResult
+    private func markSessionUsed(_ id: SessionProfile.ID) -> SessionProfile? {
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else { return nil }
+        profiles[index].lastUsedAt = Date()
+        synchronizeOpenTabs(with: profiles[index])
+        persist()
+        return profiles[index]
+    }
+
+    private func shellArgument(_ value: String) -> String {
+        let safeCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~@:%+"))
+        if value.unicodeScalars.allSatisfy(safeCharacters.contains) {
+            return value
+        }
+        return "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 
     func promptHostKey(_ check: HostKeyCheck) async -> HostKeyDecision {

@@ -39,13 +39,31 @@ struct AppCommands: Commands {
         CommandMenu("Session") {
             Button("Connect") { model.connectSelected() }
                 .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(model.selectedProfile == nil)
             Button("Disconnect") { model.disconnectSelectedTab() }
+                .disabled(model.selectedTab?.controller.canDisconnect != true)
             Button("Open SFTP") { model.openSelectedSFTP() }
                 .disabled(model.sftpContextProfile == nil)
             Divider()
+            Button(model.selectedProfile?.isFavorite == true ? "Remove from Favorites" : "Add to Favorites") {
+                if let profile = model.selectedProfile {
+                    model.toggleFavorite(profile)
+                }
+            }
+            .disabled(model.selectedProfile == nil)
+            Button("Copy SSH Command") {
+                if let profile = model.selectedProfile {
+                    model.copySSHCommand(profile)
+                }
+            }
+            .disabled(model.selectedProfile == nil)
+            Divider()
             Button("Edit Session…") { model.editSelected() }
+                .disabled(model.selectedProfile == nil)
             Button("Duplicate Session") { model.duplicateSelected() }
+                .disabled(model.selectedProfile == nil)
             Button("Delete Session") { model.deleteSelected() }
+                .disabled(model.selectedProfile == nil)
         }
         CommandGroup(after: .textEditing) {
             Button("Find…") { model.findBarVisible = true }
