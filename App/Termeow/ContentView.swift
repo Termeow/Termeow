@@ -16,9 +16,17 @@ struct ContentView: View {
         .sheet(item: $model.editor) { editor in
             SessionEditorView(state: editor)
         }
+        .sheet(item: $model.sftpBrowser) { browser in
+            NavigationStack {
+                SFTPBrowserView(browser: browser)
+            }
+            .sheet(item: hostKeyPromptBinding) { prompt in
+                HostKeyView(check: prompt.check)
+            }
+        }
         .sheet(item: Binding(
-            get: { model.hostKeyPrompt },
-            set: { if $0 == nil { model.resolveHostKey(.cancel) } }
+            get: { model.sftpBrowser == nil ? model.hostKeyPrompt : nil },
+            set: { if $0 == nil, model.hostKeyPrompt != nil { model.resolveHostKey(.cancel) } }
         )) { prompt in
             HostKeyView(check: prompt.check)
         }
@@ -31,12 +39,28 @@ struct ContentView: View {
         )
     }
 
+    private var hostKeyPromptBinding: Binding<HostKeyPromptState?> {
+        Binding(
+            get: { model.hostKeyPrompt },
+            set: { if $0 == nil, model.hostKeyPrompt != nil { model.resolveHostKey(.cancel) } }
+        )
+    }
+
     private var detailColumn: some View {
         detailBody
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle(model.selectedTab?.controller.title ?? "Termeow")
             .safeAreaInset(edge: .top, spacing: 0) { TabBarView() }
             .safeAreaInset(edge: .bottom, spacing: 0) { StatusBarView() }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Open SFTP", systemImage: "externaldrive.connected.to.line.below") {
+                        model.openSelectedSFTP()
+                    }
+                    .disabled(model.sftpContextProfile == nil)
+                    .help("Open SFTP")
+                }
+            }
     }
 
     @ViewBuilder
@@ -108,6 +132,9 @@ struct TabChip: View {
             .disabled(!tab.controller.canDisconnect)
             Button("Duplicate Tab", systemImage: "plus.square.on.square") {
                 model.duplicateTab(tab.id)
+            }
+            Button("Open SFTP", systemImage: "externaldrive.connected.to.line.below") {
+                model.openSFTP(tab.controller.profile)
             }
             Divider()
             Button("Close Tab", systemImage: "xmark") {

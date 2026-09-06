@@ -12,6 +12,7 @@ final class AppModel {
     var selectedTabID: WorkspaceTab.ID?
     var searchText = ""
     var editor: SessionEditorState?
+    var sftpBrowser: SFTPBrowserModel?
     var hostKeyPrompt: HostKeyPromptState?
     @ObservationIgnored
     private var hostKeyContinuation: CheckedContinuation<HostKeyDecision, Never>?
@@ -39,6 +40,10 @@ final class AppModel {
 
     var selectedTab: WorkspaceTab? {
         tabs.first { $0.id == selectedTabID }
+    }
+
+    var sftpContextProfile: SessionProfile? {
+        selectedTab?.controller.profile ?? selectedProfile
     }
 
     var filteredProfiles: [SessionProfile] {
@@ -166,6 +171,26 @@ final class AppModel {
     func openSelectedInNewTab() {
         guard let profile = selectedProfile else { return }
         openSessionInNewTab(profile)
+    }
+
+    func openSelectedSFTP() {
+        guard let profile = sftpContextProfile else { return }
+        openSFTP(profile)
+    }
+
+    func openSFTP(_ profile: SessionProfile) {
+        sftpBrowser?.close()
+        selectedProfileID = profile.id
+        let secret = (try? keychain.secret(id: profile.credentialID)) ?? ""
+        let bridge = HostKeyBridge(model: self)
+        let service = CitadelSFTPService(
+            profile: profile,
+            secret: secret,
+            hostKeyStore: hostKeyStore
+        ) { check in
+            await bridge.prompt(check)
+        }
+        sftpBrowser = SFTPBrowserModel(profile: profile, service: service)
     }
 
     func openSessionInNewTab(_ profile: SessionProfile) {

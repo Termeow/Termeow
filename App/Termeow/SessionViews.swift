@@ -52,6 +52,9 @@ struct SessionSidebar: View {
         Button("Connect") {
             model.connect(profile)
         }
+        Button("Open SFTP") {
+            model.openSFTP(profile)
+        }
         Divider()
         Button("Edit") {
             model.selectedProfileID = profile.id
