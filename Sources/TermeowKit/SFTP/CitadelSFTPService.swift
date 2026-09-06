@@ -6,6 +6,7 @@ public enum SFTPServiceError: Error, Sendable {
     case notConnected
     case invalidName
     case localFileUnavailable
+    case destinationTypeMismatch
 }
 
 public typealias SFTPTransferProgress = @Sendable (_ completedBytes: UInt64, _ totalBytes: UInt64?) -> Void
@@ -110,11 +111,72 @@ public actor CitadelSFTPService {
         remotePath: String,
         progress: SFTPTransferProgress? = nil
     ) async throws {
-        let client = try connectedClient()
         let accessing = localURL.startAccessingSecurityScopedResource()
         defer {
             if accessing { localURL.stopAccessingSecurityScopedResource() }
         }
+
+        try await uploadFile(localURL: localURL, remotePath: remotePath, progress: progress)
+    }
+
+    public func uploadItem(
+        localURL: URL,
+        remotePath: String,
+        progress: SFTPTransferProgress? = nil
+    ) async throws {
+        let accessing = localURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessing { localURL.stopAccessingSecurityScopedResource() }
+        }
+
+        try await uploadItemContents(localURL: localURL, remotePath: remotePath, progress: progress)
+    }
+
+    public func downloadItem(
+        remoteItem: SFTPItem,
+        localURL: URL,
+        progress: SFTPTransferProgress? = nil
+    ) async throws {
+        let accessing = localURL.deletingLastPathComponent().startAccessingSecurityScopedResource()
+        defer {
+            if accessing { localURL.deletingLastPathComponent().stopAccessingSecurityScopedResource() }
+        }
+
+        try await downloadItemContents(remoteItem: remoteItem, localURL: localURL, progress: progress)
+    }
+
+    private func uploadItemContents(
+        localURL: URL,
+        remotePath: String,
+        progress: SFTPTransferProgress?
+    ) async throws {
+        try Task.checkCancellation()
+        let values = try localURL.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        if values.isDirectory == true, values.isSymbolicLink != true {
+            try await ensureRemoteDirectory(at: remotePath)
+            let children = try FileManager.default.contentsOfDirectory(
+                at: localURL,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: []
+            ).sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            for child in children {
+                try await uploadItemContents(
+                    localURL: child,
+                    remotePath: SFTPPath.joining(remotePath, child.lastPathComponent),
+                    progress: progress
+                )
+            }
+        } else {
+            try await uploadFile(localURL: localURL, remotePath: remotePath, progress: progress)
+        }
+    }
+
+    private func uploadFile(
+        localURL: URL,
+        remotePath: String,
+        progress: SFTPTransferProgress?
+    ) async throws {
+        let client = try connectedClient()
 
         guard let source = try? FileHandle(forReadingFrom: localURL) else {
             throw SFTPServiceError.localFileUnavailable
@@ -148,11 +210,46 @@ public actor CitadelSFTPService {
         localURL: URL,
         progress: SFTPTransferProgress? = nil
     ) async throws {
-        let client = try connectedClient()
         let accessing = localURL.startAccessingSecurityScopedResource()
         defer {
             if accessing { localURL.stopAccessingSecurityScopedResource() }
         }
+
+        try await downloadFile(remotePath: remotePath, localURL: localURL, progress: progress)
+    }
+
+    private func downloadItemContents(
+        remoteItem: SFTPItem,
+        localURL: URL,
+        progress: SFTPTransferProgress?
+    ) async throws {
+        try Task.checkCancellation()
+        if remoteItem.isDirectory {
+            if FileManager.default.fileExists(atPath: localURL.path) {
+                let values = try localURL.resourceValues(forKeys: [.isDirectoryKey])
+                guard values.isDirectory == true else { throw SFTPServiceError.destinationTypeMismatch }
+            } else {
+                try FileManager.default.createDirectory(at: localURL, withIntermediateDirectories: false)
+            }
+            let directory = try await listDirectory(at: remoteItem.path)
+            for child in directory.items {
+                try await downloadItemContents(
+                    remoteItem: child,
+                    localURL: localURL.appendingPathComponent(child.name, isDirectory: child.isDirectory),
+                    progress: progress
+                )
+            }
+        } else {
+            try await downloadFile(remotePath: remoteItem.path, localURL: localURL, progress: progress)
+        }
+    }
+
+    private func downloadFile(
+        remotePath: String,
+        localURL: URL,
+        progress: SFTPTransferProgress?
+    ) async throws {
+        let client = try connectedClient()
 
         let attributes = try? await client.getAttributes(at: remotePath)
         let total = attributes?.size
@@ -189,6 +286,18 @@ public actor CitadelSFTPService {
             try? FileManager.default.removeItem(at: temporaryURL)
             throw error
         }
+    }
+
+    private func ensureRemoteDirectory(at path: String) async throws {
+        let client = try connectedClient()
+        if let attributes = try? await client.getAttributes(at: path) {
+            guard let permissions = attributes.permissions,
+                  permissions & 0o170000 == 0o040000 else {
+                throw SFTPServiceError.destinationTypeMismatch
+            }
+            return
+        }
+        try await client.createDirectory(atPath: path)
     }
 
     private func connectedClient() throws -> Citadel.SFTPClient {

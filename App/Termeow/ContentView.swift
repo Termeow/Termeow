@@ -16,18 +16,7 @@ struct ContentView: View {
         .sheet(item: $model.editor) { editor in
             SessionEditorView(state: editor)
         }
-        .sheet(item: $model.sftpBrowser) { browser in
-            NavigationStack {
-                SFTPBrowserView(browser: browser)
-            }
-            .sheet(item: hostKeyPromptBinding) { prompt in
-                HostKeyView(check: prompt.check)
-            }
-        }
-        .sheet(item: Binding(
-            get: { model.sftpBrowser == nil ? model.hostKeyPrompt : nil },
-            set: { if $0 == nil, model.hostKeyPrompt != nil { model.resolveHostKey(.cancel) } }
-        )) { prompt in
+        .sheet(item: hostKeyPromptBinding) { prompt in
             HostKeyView(check: prompt.check)
         }
     }

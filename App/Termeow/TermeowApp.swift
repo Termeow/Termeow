@@ -33,7 +33,7 @@ struct AppCommands: Commands {
                 .keyboardShortcut("n", modifiers: [.command])
             Button("New Tab") { model.openSelectedInNewTab() }
                 .keyboardShortcut("t", modifiers: [.command])
-            Button("Close Tab") { model.closeSelectedTab() }
+            Button("Close Tab") { model.closeSelectedTabOrSFTPWindow() }
                 .keyboardShortcut("w", modifiers: [.command])
         }
         CommandMenu("Session") {

@@ -12,7 +12,6 @@ final class AppModel {
     var selectedTabID: WorkspaceTab.ID?
     var searchText = ""
     var editor: SessionEditorState?
-    var sftpBrowser: SFTPBrowserModel?
     var hostKeyPrompt: HostKeyPromptState?
     @ObservationIgnored
     private var hostKeyContinuation: CheckedContinuation<HostKeyDecision, Never>?
@@ -21,6 +20,9 @@ final class AppModel {
     var findCaseSensitive = false
     var sidebarVisible = true
     var statusMessage: String?
+
+    @ObservationIgnored
+    private var sftpWindows: [UUID: SFTPWindowController] = [:]
 
     let sessionStore: SessionStore
     let hostKeyStore: HostKeyStore
@@ -179,10 +181,10 @@ final class AppModel {
     }
 
     func openSFTP(_ profile: SessionProfile) {
-        sftpBrowser?.close()
         selectedProfileID = profile.id
         let secret = (try? keychain.secret(id: profile.credentialID)) ?? ""
-        let bridge = HostKeyBridge(model: self)
+        let promptCoordinator = SFTPHostKeyPromptCoordinator()
+        let bridge = SFTPHostKeyBridge(coordinator: promptCoordinator)
         let service = CitadelSFTPService(
             profile: profile,
             secret: secret,
@@ -190,7 +192,30 @@ final class AppModel {
         ) { check in
             await bridge.prompt(check)
         }
-        sftpBrowser = SFTPBrowserModel(profile: profile, service: service)
+        let browser = SFTPBrowserModel(profile: profile, service: service)
+        let id = UUID()
+        let controller = SFTPWindowController(
+            id: id,
+            browser: browser,
+            promptCoordinator: promptCoordinator
+        ) { [weak self] id in
+            self?.sftpWindows.removeValue(forKey: id)
+        }
+        sftpWindows[id] = controller
+        controller.showWindow(nil)
+    }
+
+    func closeSelectedTabOrSFTPWindow() {
+        var targetWindow = NSApp.keyWindow
+        if let sheetParent = targetWindow?.sheetParent {
+            targetWindow = sheetParent
+        }
+        if let targetWindow,
+           sftpWindows.values.contains(where: { $0.window === targetWindow }) {
+            targetWindow.performClose(nil)
+            return
+        }
+        closeSelectedTab()
     }
 
     func openSessionInNewTab(_ profile: SessionProfile) {
