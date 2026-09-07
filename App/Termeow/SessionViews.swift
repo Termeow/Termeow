@@ -54,6 +54,37 @@ private enum SessionSidebarPrompt {
     }
 }
 
+private struct SessionSearchField: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search Sessions", text: $text)
+                .textFieldStyle(.plain)
+            if !text.isEmpty {
+                Button("Clear Search", systemImage: "xmark.circle.fill") {
+                    text = ""
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Clear Search")
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 28)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 0.5)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+    }
+}
+
 struct SessionSidebar: View {
     @Environment(AppModel.self) private var model
     @AppStorage("sessionSortOrder") private var sortOrderRawValue = SessionSortOrder.name.rawValue
@@ -66,26 +97,29 @@ struct SessionSidebar: View {
 
     var body: some View {
         @Bindable var model = model
-        List(selection: $model.selectedProfileID) {
-            ForEach(sections) { section in
-                SessionSectionView(
-                    section: section,
-                    isExpanded: expansionBinding(for: section.id),
-                    onRename: beginRenaming,
-                    onNewGroup: beginGrouping,
-                    onCreateSession: { model.beginNewSession(inGroup: $0) },
-                    onCreateGroup: beginCreatingGroup,
-                    onRenameGroup: beginRenamingGroup,
-                    onDeleteGroup: { activePrompt = .deleteGroup($0) }
-                )
+        VStack(spacing: 0) {
+            SessionSearchField(text: $model.searchText)
+            Divider()
+            List(selection: $model.selectedProfileID) {
+                ForEach(sections) { section in
+                    SessionSectionView(
+                        section: section,
+                        isExpanded: expansionBinding(for: section.id),
+                        onRename: beginRenaming,
+                        onNewGroup: beginGrouping,
+                        onCreateSession: { model.beginNewSession(inGroup: $0) },
+                        onCreateGroup: beginCreatingGroup,
+                        onRenameGroup: beginRenamingGroup,
+                        onDeleteGroup: { activePrompt = .deleteGroup($0) }
+                    )
+                }
             }
+            .listStyle(.sidebar)
+            .tint(.blue)
+            .contextMenu { sidebarContextMenu }
+            .overlay { emptyState }
         }
-        .listStyle(.sidebar)
-        .tint(.blue)
-        .contextMenu { sidebarContextMenu }
         .navigationTitle("Sessions")
-        .searchable(text: $model.searchText, prompt: "Sessions")
-        .overlay { emptyState }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             HStack {
                 Text(sessionCountText)
