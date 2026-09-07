@@ -3,6 +3,7 @@ import SwiftUI
 import TermeowKit
 
 private enum SessionSortOrder: String, CaseIterable, Identifiable {
+    case manual
     case name
     case host
     case recent
@@ -11,6 +12,7 @@ private enum SessionSortOrder: String, CaseIterable, Identifiable {
 
     var title: LocalizedStringKey {
         switch self {
+        case .manual: "Manual"
         case .name: "Name"
         case .host: "Host"
         case .recent: "Last Used"
@@ -105,12 +107,14 @@ struct SessionSidebar: View {
                     SessionSectionView(
                         section: section,
                         isExpanded: expansionBinding(for: section.id),
+                        allowsDrag: !isFiltering,
                         onRename: beginRenaming,
                         onNewGroup: beginGrouping,
                         onCreateSession: { model.beginNewSession(inGroup: $0) },
                         onCreateGroup: beginCreatingGroup,
                         onRenameGroup: beginRenamingGroup,
-                        onDeleteGroup: { activePrompt = .deleteGroup($0) }
+                        onDeleteGroup: { activePrompt = .deleteGroup($0) },
+                        onDrop: applySessionDrop
                     )
                 }
             }
@@ -173,10 +177,14 @@ struct SessionSidebar: View {
         SessionSortOrder(rawValue: sortOrderRawValue) ?? .name
     }
 
+    private var isFiltering: Bool {
+        !model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var sections: [SessionListSection] {
         var result: [SessionListSection] = []
         let favorites = sorted(model.filteredProfiles.filter(\.isFavorite))
-        if !favorites.isEmpty {
+        if !favorites.isEmpty || (!isFiltering && !model.profiles.isEmpty) {
             result.append(
                 SessionListSection(
                     id: "favorites",
@@ -190,7 +198,6 @@ struct SessionSidebar: View {
 
         let regularProfiles = model.filteredProfiles.filter { !$0.isFavorite }
         let ungrouped = sorted(regularProfiles.filter { $0.groupName.isEmpty })
-        let isFiltering = !model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if !ungrouped.isEmpty || (!isFiltering && (!model.profiles.isEmpty || !model.sessionGroupNames.isEmpty)) {
             result.append(
                 SessionListSection(
@@ -227,8 +234,11 @@ struct SessionSidebar: View {
     }
 
     private func sorted(_ profiles: [SessionProfile]) -> [SessionProfile] {
-        profiles.sorted { lhs, rhs in
+        if sortOrder == .manual { return profiles }
+        return profiles.sorted { lhs, rhs in
             switch sortOrder {
+            case .manual:
+                true
             case .name:
                 localizedAscending(lhs.displayName, rhs.displayName)
             case .host:
@@ -429,35 +439,117 @@ struct SessionSidebar: View {
         collapsedSectionIDs.remove("group:\(groupName)")
         activePrompt = nil
     }
+
+    private func applySessionDrop(_ id: SessionProfile.ID, to placement: SessionListPlacement) {
+        guard model.moveSession(id, to: placement) else { return }
+        sortOrderRawValue = SessionSortOrder.manual.rawValue
+    }
 }
 
 private struct SessionSectionView: View {
     @Environment(AppModel.self) private var model
     let section: SessionListSection
     @Binding var isExpanded: Bool
+    let allowsDrag: Bool
     let onRename: (SessionProfile) -> Void
     let onNewGroup: (SessionProfile) -> Void
     let onCreateSession: (String) -> Void
     let onCreateGroup: () -> Void
     let onRenameGroup: (String) -> Void
     let onDeleteGroup: (String) -> Void
+    let onDrop: (SessionProfile.ID, SessionListPlacement) -> Void
+    @State private var targetedRowID: SessionProfile.ID?
+    @State private var headerTargeted = false
 
     var body: some View {
         Section(isExpanded: $isExpanded) {
             ForEach(section.profiles) { profile in
-                SessionListRow(
-                    profile: profile,
-                    selected: model.selectedProfileID == profile.id,
-                    tabStates: model.tabStates(for: profile.id),
-                    onRename: { onRename(profile) },
-                    onNewGroup: { onNewGroup(profile) }
-                )
-                .tag(profile.id)
+                row(for: profile)
             }
         } header: {
-            header
-                .contentShape(Rectangle())
-                .contextMenu { sectionMenu }
+            sectionHeader
+        }
+    }
+
+    @ViewBuilder
+    private func row(for profile: SessionProfile) -> some View {
+        let content = SessionListRow(
+            profile: profile,
+            selected: model.selectedProfileID == profile.id,
+            tabStates: model.tabStates(for: profile.id),
+            onRename: { onRename(profile) },
+            onNewGroup: { onNewGroup(profile) }
+        )
+        .tag(profile.id)
+        .listRowBackground(targetedRowID == profile.id ? Color.accentColor.opacity(0.18) : nil)
+
+        if allowsDrag {
+            content
+                .draggable(profile.id.uuidString)
+                .dropDestination(for: String.self) { items, location in
+                    drop(items, on: profile, at: location)
+                } isTargeted: { isTargeted in
+                    targetedRowID = isTargeted ? profile.id : (targetedRowID == profile.id ? nil : targetedRowID)
+                }
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var sectionHeader: some View {
+        let content = header
+            .contentShape(Rectangle())
+            .padding(.vertical, 2)
+            .background(headerTargeted ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+            .contextMenu { sectionMenu }
+
+        if allowsDrag {
+            content.dropDestination(for: String.self) { items, _ in
+                dropOnHeader(items)
+            } isTargeted: { headerTargeted = $0 }
+        } else {
+            content
+        }
+    }
+
+    private func drop(_ items: [String], on profile: SessionProfile, at location: CGPoint) -> Bool {
+        guard allowsDrag, let id = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+        onDrop(id, placement(droppingOn: profile, at: location))
+        return true
+    }
+
+    private func dropOnHeader(_ items: [String]) -> Bool {
+        guard allowsDrag, let id = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+        onDrop(id, headerPlacement)
+        return true
+    }
+
+    private var headerPlacement: SessionListPlacement {
+        switch section.kind {
+        case .favorites: .favorites(before: nil)
+        case .ungrouped: .ungrouped(before: nil)
+        case .group(let name): .group(name, before: nil)
+        }
+    }
+
+    private func placement(droppingOn profile: SessionProfile, at location: CGPoint) -> SessionListPlacement {
+        let insertAfter = location.y > 20
+        let before: UUID?
+        if insertAfter {
+            if let index = section.profiles.firstIndex(where: { $0.id == profile.id }),
+               index + 1 < section.profiles.count {
+                before = section.profiles[index + 1].id
+            } else {
+                before = nil
+            }
+        } else {
+            before = profile.id
+        }
+        switch section.kind {
+        case .favorites: return .favorites(before: before)
+        case .ungrouped: return .ungrouped(before: before)
+        case .group(let name): return .group(name, before: before)
         }
     }
 

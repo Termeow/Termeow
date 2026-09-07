@@ -54,7 +54,7 @@ Update this file in the same PR as the feature.
 - [x] Persist sessions and empty groups (`SessionLibrary`)
 - [x] Migrate the old bare profile-array JSON
 - [ ] Nested groups
-- [ ] Drag and drop sessions between groups
+- [x] Drag sessions to reorder, Favorites, or an existing group
 - [ ] Open in a new window
 - [ ] Import `~/.ssh/config`
 - [ ] Import Xshell / WinSCP / other session files
