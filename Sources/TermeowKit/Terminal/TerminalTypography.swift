@@ -35,6 +35,13 @@ public struct TerminalTypography: Equatable, Sendable {
         return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
+    public var statusLabel: String {
+        let font = resolvedFont()
+        let name = font.displayName ?? font.fontName
+        let value = clamped()
+        return "\(name) \(Int(value.fontSize.rounded())) · \(String(format: "%.2f", value.lineHeight))"
+    }
+
     public static func load(from defaults: UserDefaults = .standard) -> TerminalTypography {
         TerminalTypography(
             fontName: defaults.string(forKey: Keys.fontName) ?? "",

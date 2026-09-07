@@ -64,6 +64,12 @@ struct ContentView: View {
             .safeAreaInset(edge: .top, spacing: 0) { TabBarView() }
             .safeAreaInset(edge: .bottom, spacing: 0) { StatusBarView() }
             .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    SettingsLink {
+                        Label("Settings…", systemImage: "gearshape")
+                    }
+                    .help("Settings…")
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button("Open SFTP", systemImage: "externaldrive.connected.to.line.below") {
                         model.openSelectedSFTP()
@@ -230,6 +236,11 @@ struct StatusBarView: View {
             if let message = model.statusMessage {
                 Text(message)
             }
+            SettingsLink {
+                Text(model.typography.statusLabel)
+            }
+            .buttonStyle(.plain)
+            .help("Settings…")
         }
         .font(.caption)
         .foregroundStyle(.secondary)

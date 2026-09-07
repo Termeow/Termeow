@@ -14,6 +14,12 @@ import Testing
     #expect(upper.lineHeight == TerminalTypography.maxLineHeight)
 }
 
+@Test func terminalTypographyStatusLabelIncludesSizeAndLineHeight() {
+    let typography = TerminalTypography(fontName: "", fontSize: 16, lineHeight: 1.25)
+    #expect(typography.statusLabel.contains("16"))
+    #expect(typography.statusLabel.contains("1.25"))
+}
+
 @Test func terminalTypographyFallsBackToSystemMonospaced() {
     let missing = TerminalTypography(fontName: "DefinitelyNotAFont-Regular", fontSize: 16, lineHeight: 1)
     let expected = NSFont.monospacedSystemFont(ofSize: 16, weight: .regular)
