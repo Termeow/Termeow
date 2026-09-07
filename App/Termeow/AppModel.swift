@@ -492,6 +492,12 @@ final class AppModel {
         selectedTab?.controller.disconnect()
     }
 
+    func clearSelectedTerminal() {
+        guard let terminal = selectedTab?.controller.hostedTerminal() else { return }
+        terminal.clearScreenAndScrollback()
+        resetFindSummary()
+    }
+
     func performFind(forward: Bool) {
         guard let terminal = selectedTab?.controller.hostedTerminal() else {
             resetFindSummary()

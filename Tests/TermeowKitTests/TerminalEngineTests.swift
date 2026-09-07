@@ -99,3 +99,17 @@ import Testing
 
     #expect(view.searchSummary("queued output", caseSensitive: true).total == 1)
 }
+
+@Test @MainActor func terminalViewClearsScreenAndScrollback() {
+    let view = SSHTerminalView()
+    var sentData = Data()
+    view.onSend = { sentData.append($0) }
+    let output = (0 ..< 80).map { "history-marker-\($0)" }.joined(separator: "\r\n")
+    view.feedOutput(Data(output.utf8))
+    #expect(view.searchSummary("history-marker", caseSensitive: true).total > 0)
+
+    view.clearScreenAndScrollback()
+
+    #expect(view.searchSummary("history-marker", caseSensitive: true).total == 0)
+    #expect(sentData.isEmpty)
+}
