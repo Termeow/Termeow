@@ -67,6 +67,7 @@
 "Last Used" = "最近使用";
 "Light" = "浅色";
 "Line Height" = "行高";
+"Limits how many off-screen terminal lines are retained." = "限制终端在屏幕外保留的历史行数。";
 "Method" = "方式";
 "Name" = "名称";
 "New Group" = "新建分组";
@@ -97,6 +98,7 @@
 "Rename…" = "重命名…";
 "Save" = "保存";
 "Search Sessions" = "搜索会话";
+"Scrollback Lines" = "回滚行数";
 "Select Tab %lld" = "选择标签页 %lld";
 "Session" = "会话";
 "Session List Options" = "会话列表选项";

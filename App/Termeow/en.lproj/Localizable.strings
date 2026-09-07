@@ -67,6 +67,7 @@
 "Last Used" = "Last Used";
 "Light" = "Light";
 "Line Height" = "Line Height";
+"Limits how many off-screen terminal lines are retained." = "Limits how many off-screen terminal lines are retained.";
 "Method" = "Method";
 "Name" = "Name";
 "New Group" = "New Group";
@@ -97,6 +98,7 @@
 "Rename…" = "Rename…";
 "Save" = "Save";
 "Search Sessions" = "Search Sessions";
+"Scrollback Lines" = "Scrollback Lines";
 "Select Tab %lld" = "Select Tab %lld";
 "Session" = "Session";
 "Session List Options" = "Session List Options";
