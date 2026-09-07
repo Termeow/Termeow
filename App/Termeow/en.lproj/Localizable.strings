@@ -104,6 +104,8 @@
 "Unknown host key" = "Unknown host key";
 "Username" = "Username";
 "Move" = "Move";
+"Move Tab Left" = "Move Tab Left";
+"Move Tab Right" = "Move Tab Right";
 "Move to Group" = "Move to Group";
 "Collapse All" = "Collapse All";
 "WARNING: remote host identification has changed for %@:%ld.\n\nSaved: %@ %@\nOffered: %@ %@" = "WARNING: remote host identification has changed for %@:%ld.\n\nSaved: %@ %@\nOffered: %@ %@";

@@ -104,6 +104,8 @@
 "Unknown host key" = "未知主机密钥";
 "Username" = "用户名";
 "Move" = "移动";
+"Move Tab Left" = "向左移动标签页";
+"Move Tab Right" = "向右移动标签页";
 "Move to Group" = "移动到分组";
 "Collapse All" = "全部折叠";
 "WARNING: remote host identification has changed for %@:%ld.\n\nSaved: %@ %@\nOffered: %@ %@" = "警告：远程主机 %@:%ld 的身份标识已更改。\n\n已保存：%@ %@\n服务器提供：%@ %@";

@@ -372,6 +372,30 @@ final class AppModel {
         selectTab(tabs[index].id)
     }
 
+    func reorderTab(_ id: WorkspaceTab.ID, over targetID: WorkspaceTab.ID) {
+        guard let targetIndex = tabs.firstIndex(where: { $0.id == targetID }) else { return }
+        moveTab(id, to: targetIndex)
+    }
+
+    func moveTab(_ id: WorkspaceTab.ID, by offset: Int) {
+        guard let sourceIndex = tabs.firstIndex(where: { $0.id == id }) else { return }
+        moveTab(id, to: sourceIndex + offset)
+    }
+
+    func canMoveTab(_ id: WorkspaceTab.ID, by offset: Int) -> Bool {
+        guard let sourceIndex = tabs.firstIndex(where: { $0.id == id }) else { return false }
+        return tabs.indices.contains(sourceIndex + offset)
+    }
+
+    private func moveTab(_ id: WorkspaceTab.ID, to destinationIndex: Int) {
+        guard let sourceIndex = tabs.firstIndex(where: { $0.id == id }),
+              tabs.indices.contains(destinationIndex),
+              sourceIndex != destinationIndex else { return }
+        let tab = tabs.remove(at: sourceIndex)
+        tabs.insert(tab, at: destinationIndex)
+        persist()
+    }
+
     func closeSelectedTab() {
         guard let id = selectedTabID, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         tabs[index].controller.disconnect()
