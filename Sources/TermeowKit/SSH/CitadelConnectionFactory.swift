@@ -53,30 +53,50 @@ enum CitadelConnectionFactory {
     }
 
     private static func privateKeyAuth(profile: SessionProfile, secret: String) throws -> SSHAuthenticationMethod {
-        guard let bookmark = profile.privateKeyBookmark else { throw SSHError.invalidPrivateKey }
-        var stale = false
-        let url = try URL(
-            resolvingBookmarkData: bookmark,
-            options: [.withSecurityScope],
-            relativeTo: nil,
-            bookmarkDataIsStale: &stale
-        )
-        guard url.startAccessingSecurityScopedResource() else { throw SSHError.invalidPrivateKey }
-        defer { url.stopAccessingSecurityScopedResource() }
-        let keyText = try String(contentsOf: url, encoding: .utf8)
+        do {
+            guard let bookmark = profile.privateKeyBookmark else { throw SSHError.invalidPrivateKey }
+            var stale = false
+            let url = try URL(
+                resolvingBookmarkData: bookmark,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &stale
+            )
+            guard url.startAccessingSecurityScopedResource() else { throw SSHError.invalidPrivateKey }
+            defer { url.stopAccessingSecurityScopedResource() }
+            let keyText = try String(contentsOf: url, encoding: .utf8)
+            return try privateKeyAuthentication(username: profile.username, keyText: keyText, secret: secret)
+        } catch let error as SSHError {
+            throw error
+        } catch {
+            throw SSHError.invalidPrivateKey
+        }
+    }
+
+    static func privateKeyAuthentication(username: String, keyText: String, secret: String) throws -> SSHAuthenticationMethod {
+        if let rsaKey = try PrivateKeyMaterial.rsaPEMKey(from: keyText) {
+            return try RSASHA2Authentication.method(username: username, key: rsaKey)
+        }
+        let keyText = try PrivateKeyMaterial.normalizedOpenSSHKey(from: keyText)
         let passphrase = secret.isEmpty ? nil : Data(secret.utf8)
-        let type = try SSHKeyDetection.detectPrivateKeyType(from: keyText)
-        switch type {
-        case .ed25519:
-            let key = try Curve25519.Signing.PrivateKey(sshEd25519: keyText, decryptionKey: passphrase)
-            return .ed25519(username: profile.username, privateKey: key)
-        case .rsa:
-            let key = try Insecure.RSA.PrivateKey(sshRsa: keyText, decryptionKey: passphrase)
-            return .rsa(username: profile.username, privateKey: key)
-        case .ecdsaP256, .ecdsaP384, .ecdsaP521:
-            throw SSHError.unsupportedAlgorithm
-        default:
-            throw SSHError.unsupportedAlgorithm
+        do {
+            let type = try SSHKeyDetection.detectPrivateKeyType(from: keyText)
+            switch type {
+            case .ed25519:
+                let key = try Curve25519.Signing.PrivateKey(sshEd25519: keyText, decryptionKey: passphrase)
+                return .ed25519(username: username, privateKey: key)
+            case .rsa:
+                let key = try Insecure.RSA.PrivateKey(sshRsa: keyText, decryptionKey: passphrase)
+                return .rsa(username: username, privateKey: key)
+            case .ecdsaP256, .ecdsaP384, .ecdsaP521:
+                throw SSHError.unsupportedAlgorithm
+            default:
+                throw SSHError.unsupportedAlgorithm
+            }
+        } catch let error as SSHError {
+            throw error
+        } catch {
+            throw SSHError.invalidPrivateKey
         }
     }
 }
