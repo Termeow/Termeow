@@ -132,7 +132,7 @@ Update this file in the same PR as the feature.
 - [ ] Restore and *reconnect* tabs
 - [x] Remember the selected tab
 - [x] `⌘1`–`⌘9` jump to tab N
-- [ ] Reorder tabs
+- [x] Reorder tabs
 - [ ] Pin tab / tab color
 - [ ] Background-tab activity / dirty highlight
 - [ ] Confirm `⌘W` while the tab is still connected

@@ -92,6 +92,7 @@ struct TabBarView: View {
 
 struct TabChip: View {
     @Environment(AppModel.self) private var model
+    @State private var isDropTargeted = false
     let tab: WorkspaceTab
     var selected: Bool
 
@@ -117,9 +118,26 @@ struct TabChip: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(selected ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(isDropTargeted ? Color.accentColor : .clear, lineWidth: 1.5)
+            }
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .draggable(tab.id.uuidString)
+        .dropDestination(for: String.self) { values, _ in
+            guard let value = values.first,
+                  let sourceID = UUID(uuidString: value),
+                  sourceID != tab.id,
+                  model.tabs.contains(where: { $0.id == sourceID }) else { return false }
+            withAnimation(.easeInOut(duration: 0.16)) {
+                model.reorderTab(sourceID, over: tab.id)
+            }
+            return true
+        } isTargeted: { isTargeted in
+            isDropTargeted = isTargeted
+        }
         .contextMenu {
             Button(connectionActionTitle, systemImage: "arrow.clockwise") {
                 model.reconnectTab(tab.id)
@@ -135,6 +153,19 @@ struct TabChip: View {
             Button("Open SFTP", systemImage: "externaldrive.connected.to.line.below") {
                 model.openSFTP(tab.controller.profile)
             }
+            Divider()
+            Button("Move Tab Left", systemImage: "arrow.left") {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    model.moveTab(tab.id, by: -1)
+                }
+            }
+            .disabled(!model.canMoveTab(tab.id, by: -1))
+            Button("Move Tab Right", systemImage: "arrow.right") {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    model.moveTab(tab.id, by: 1)
+                }
+            }
+            .disabled(!model.canMoveTab(tab.id, by: 1))
             Divider()
             Button("Close Tab", systemImage: "xmark") {
                 model.closeTab(tab.id)
