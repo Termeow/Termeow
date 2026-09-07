@@ -131,7 +131,7 @@ Update this file in the same PR as the feature.
 - [x] Remember the selected session in the sidebar
 - [ ] Restore and *reconnect* tabs
 - [x] Remember the selected tab
-- [ ] `⌘1`–`⌘9` jump to tab N
+- [x] `⌘1`–`⌘9` jump to tab N
 - [ ] Reorder tabs
 - [ ] Pin tab / tab color
 - [ ] Background-tab activity / dirty highlight

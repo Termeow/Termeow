@@ -74,6 +74,14 @@ struct AppCommands: Commands {
                 .keyboardShortcut("[", modifiers: [.command, .shift])
             Button("Next Tab") { model.selectRelativeTab(1) }
                 .keyboardShortcut("]", modifiers: [.command, .shift])
+            Divider()
+            ForEach(1...9, id: \.self) { position in
+                Button(String(format: String(localized: "Select Tab %lld"), Int64(position))) {
+                    model.selectTab(at: position - 1)
+                }
+                .keyboardShortcut(KeyEquivalent(Character(String(position))), modifiers: [.command])
+                .disabled(!model.tabs.indices.contains(position - 1))
+            }
         }
         CommandGroup(replacing: .help) {
             Button("Termeow Help") {

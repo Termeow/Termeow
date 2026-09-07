@@ -367,6 +367,11 @@ final class AppModel {
         persist()
     }
 
+    func selectTab(at index: Int) {
+        guard tabs.indices.contains(index) else { return }
+        selectTab(tabs[index].id)
+    }
+
     func closeSelectedTab() {
         guard let id = selectedTabID, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         tabs[index].controller.disconnect()
