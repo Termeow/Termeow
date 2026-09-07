@@ -19,11 +19,21 @@ public final class SSHTerminalView: TerminalView {
 
     private let host = Host()
 
-    public init(typography: TerminalTypography = .default) {
+    public init(typography: TerminalTypography = .default, colorSchemeID: TerminalColorSchemeID = .dark) {
         super.init(frame: .zero, font: typography.resolvedFont())
         terminalDelegate = host
         lineSpacing = CGFloat(typography.clamped().lineHeight)
-        applyAppearance()
+        applyColorScheme(colorSchemeID)
+    }
+
+    public func applyColorScheme(_ id: TerminalColorSchemeID) {
+        let scheme = id.scheme
+        appearance = NSAppearance(named: id.isDark ? .darkAqua : .aqua)
+        nativeForegroundColor = scheme.foreground
+        nativeBackgroundColor = scheme.background
+        caretColor = scheme.cursor
+        selectedTextBackgroundColor = scheme.selection
+        installColors(scheme.ansi.map { Color(nsColor: $0) })
     }
 
     public func applyTypography(_ typography: TerminalTypography) {
@@ -103,16 +113,6 @@ public final class SSHTerminalView: TerminalView {
 
     public func dismissSearch() {
         clearSearch()
-    }
-
-    private func applyAppearance() {
-        let scheme = TerminalColorScheme.default
-        appearance = NSAppearance(named: .darkAqua)
-        nativeForegroundColor = scheme.foreground
-        nativeBackgroundColor = scheme.background
-        caretColor = scheme.cursor
-        selectedTextBackgroundColor = scheme.selection
-        installColors(scheme.ansi.map { Color(nsColor: $0) })
     }
 }
 

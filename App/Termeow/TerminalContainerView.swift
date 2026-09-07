@@ -12,7 +12,11 @@ struct TerminalContainerView: View {
             if model.findBarVisible {
                 FindBar()
             }
-            TerminalViewRepresentable(controller: controller, typography: model.typography)
+            TerminalViewRepresentable(
+                controller: controller,
+                typography: model.typography,
+                colorSchemeID: model.colorSchemeID
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -53,10 +57,11 @@ struct FindBar: View {
 struct TerminalViewRepresentable: NSViewRepresentable {
     var controller: ConnectionController
     var typography: TerminalTypography
+    var colorSchemeID: TerminalColorSchemeID
 
     func makeNSView(context: Context) -> TerminalHostView {
         let host = TerminalHostView(terminal: controller.hostedTerminal())
-        host.terminal.applyTypography(typography)
+        applyAppearance(to: host)
         DispatchQueue.main.async {
             host.terminal.window?.makeFirstResponder(host.terminal)
         }
@@ -65,7 +70,13 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ host: TerminalHostView, context: Context) {
         host.attach(controller.hostedTerminal())
+        applyAppearance(to: host)
+    }
+
+    private func applyAppearance(to host: TerminalHostView) {
         host.terminal.applyTypography(typography)
+        host.terminal.applyColorScheme(colorSchemeID)
+        host.applyBackground(colorSchemeID.scheme)
     }
 
     static func dismantleNSView(_ host: TerminalHostView, coordinator: ()) {
@@ -80,7 +91,7 @@ final class TerminalHostView: NSView {
         self.terminal = terminal
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = TerminalColorScheme.default.background.cgColor
+        applyBackground(.dark)
         setContentHuggingPriority(.defaultLow, for: .horizontal)
         setContentHuggingPriority(.defaultLow, for: .vertical)
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -102,6 +113,10 @@ final class TerminalHostView: NSView {
             addSubview(terminal)
         }
         applyFrame()
+    }
+
+    func applyBackground(_ scheme: TerminalColorScheme) {
+        layer?.backgroundColor = scheme.background.cgColor
     }
 
     func detach() {

@@ -13,6 +13,7 @@
 "Choose Private Key" = "选择私钥";
 "Choose…" = "选择…";
 "Clear Screen" = "清空屏幕";
+"Color Scheme" = "配色方案";
 "Clear Search" = "清除搜索";
 "Close Other Tabs" = "关闭其他标签页";
 "Close and Disconnect" = "关闭并断开连接";
@@ -31,6 +32,7 @@
 "Delete" = "删除";
 "Delete Group" = "删除分组";
 "Delete Session" = "删除会话";
+"Dark" = "深色";
 "Disconnect" = "断开连接";
 "Disconnected" = "已断开";
 "Done" = "完成";
@@ -61,6 +63,7 @@
 "Keep Alive must be 0 or greater." = "保活间隔必须大于或等于 0。";
 "Key bookmark saved" = "已保存密钥书签";
 "Last Used" = "最近使用";
+"Light" = "浅色";
 "Line Height" = "行高";
 "Method" = "方式";
 "Name" = "名称";
@@ -98,6 +101,8 @@
 "Sessions" = "会话";
 "Settings…" = "设置…";
 "Sessions in this group will be moved to Sessions." = "此分组中的会话将移到“会话”。";
+"Solarized Dark" = "Solarized 深色";
+"Solarized Light" = "Solarized 浅色";
 "Sort By" = "排序方式";
 "SSH command copied" = "已复制 SSH 命令";
 "Startup Command" = "启动命令";
