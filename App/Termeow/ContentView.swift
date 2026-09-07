@@ -58,30 +58,30 @@ struct ContentView: View {
     }
 
     private var detailColumn: some View {
-        detailBody
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .navigationTitle(model.selectedTab?.controller.title ?? "Termeow")
-            .safeAreaInset(edge: .top, spacing: 0) { TabBarView() }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if model.statusBarVisible {
-                    StatusBarView()
-                }
+        VStack(spacing: 0) {
+            TabBarView()
+            detailBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if model.statusBarVisible {
+                StatusBarView()
             }
-            .toolbar {
-                ToolbarItem(placement: .automatic) {
-                    SettingsLink {
-                        Label("Settings…", systemImage: "gearshape")
-                    }
-                    .help("Settings…")
+        }
+        .navigationTitle(model.selectedTab?.controller.title ?? "Termeow")
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                SettingsLink {
+                    Label("Settings…", systemImage: "gearshape")
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Open SFTP", systemImage: "externaldrive.connected.to.line.below") {
-                        model.openSelectedSFTP()
-                    }
-                    .disabled(model.sftpContextProfile == nil)
-                    .help("Open SFTP")
-                }
+                .help("Settings…")
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Open SFTP", systemImage: "externaldrive.connected.to.line.below") {
+                    model.openSelectedSFTP()
+                }
+                .disabled(model.sftpContextProfile == nil)
+                .help("Open SFTP")
+            }
+        }
     }
 
     @ViewBuilder
@@ -91,132 +91,6 @@ struct ContentView: View {
                 .id(tab.controller.id)
         } else {
             EmptyTerminalView()
-        }
-    }
-}
-
-struct TabBarView: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(model.tabs) { tab in
-                    TabChip(tab: tab, selected: tab.id == model.selectedTabID)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-        }
-        .background(.ultraThinMaterial)
-    }
-}
-
-struct TabChip: View {
-    @Environment(AppModel.self) private var model
-    @State private var isDropTargeted = false
-    let tab: WorkspaceTab
-    var selected: Bool
-
-    var body: some View {
-        Button {
-            model.selectTab(tab.id)
-        } label: {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(color)
-                    .frame(width: 7, height: 7)
-                Text(tab.controller.title)
-                    .lineLimit(1)
-                Button {
-                    model.requestCloseTab(tab.id)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.borderless)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(selected ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(isDropTargeted ? Color.accentColor : .clear, lineWidth: 1.5)
-            }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .draggable(tab.id.uuidString)
-        .dropDestination(for: String.self) { values, _ in
-            guard let value = values.first,
-                  let sourceID = UUID(uuidString: value),
-                  sourceID != tab.id,
-                  model.tabs.contains(where: { $0.id == sourceID }) else { return false }
-            withAnimation(.easeInOut(duration: 0.16)) {
-                model.reorderTab(sourceID, over: tab.id)
-            }
-            return true
-        } isTargeted: { isTargeted in
-            isDropTargeted = isTargeted
-        }
-        .contextMenu {
-            Button(connectionActionTitle, systemImage: "arrow.clockwise") {
-                model.reconnectTab(tab.id)
-            }
-            .disabled(!tab.controller.canReconnect)
-            Button("Disconnect", systemImage: "network.slash") {
-                model.disconnectTab(tab.id)
-            }
-            .disabled(!tab.controller.canDisconnect)
-            Button("Duplicate Tab", systemImage: "plus.square.on.square") {
-                model.duplicateTab(tab.id)
-            }
-            Button("Open SFTP", systemImage: "externaldrive.connected.to.line.below") {
-                model.openSFTP(tab.controller.profile)
-            }
-            Divider()
-            Button("Move Tab Left", systemImage: "arrow.left") {
-                withAnimation(.easeInOut(duration: 0.16)) {
-                    model.moveTab(tab.id, by: -1)
-                }
-            }
-            .disabled(!model.canMoveTab(tab.id, by: -1))
-            Button("Move Tab Right", systemImage: "arrow.right") {
-                withAnimation(.easeInOut(duration: 0.16)) {
-                    model.moveTab(tab.id, by: 1)
-                }
-            }
-            .disabled(!model.canMoveTab(tab.id, by: 1))
-            Divider()
-            Button("Close Tab", systemImage: "xmark") {
-                model.requestCloseTab(tab.id)
-            }
-            Button("Close Other Tabs", systemImage: "xmark.circle") {
-                model.closeOtherTabs(keeping: tab.id)
-            }
-            .disabled(model.tabs.count < 2)
-            Button("Close Tabs to the Right", systemImage: "arrow.right.to.line") {
-                model.closeTabsToRight(of: tab.id)
-            }
-            .disabled(!model.hasTabsToRight(of: tab.id))
-        }
-    }
-
-    private var connectionActionTitle: String {
-        if case .disconnected = tab.controller.state {
-            String(localized: "Connect")
-        } else {
-            String(localized: "Reconnect")
-        }
-    }
-
-    private var color: Color {
-        switch tab.controller.state {
-        case .connected: .green
-        case .connecting: .yellow
-        case .failed: .red
-        case .disconnected: .secondary
         }
     }
 }
