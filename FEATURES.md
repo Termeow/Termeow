@@ -80,9 +80,17 @@ Update this file in the same PR as the feature.
 - [x] PTY resize
 - [x] Mapped `SSHError` strings in the UI; details stay in `os.Logger`
 - [x] UI state follows a dropped SSH session
-- [ ] ECDSA user keys (code throws `unsupportedAlgorithm`)
+- [ ] RSA SHA-2 negotiation (`rsa-sha2-512` / `rsa-sha2-256`) for every RSA private-key format
+- [ ] ECDSA user keys (P-256, P-384, and P-521 in OpenSSH, SEC1, and PKCS#8 formats)
+- [ ] Ed25519 user keys in PKCS#8 format
+- [ ] Passphrase-protected PKCS#1, PKCS#8, and SEC1 PEM keys
 - [ ] Reliable RSA-only *host* keys (Citadel / SwiftNIO SSH limit)
-- [ ] SSH Agent (`ssh-agent`, 1Password, Secretive)
+- [ ] SSH Agent identities (`SSH_AUTH_SOCK`, 1Password, Secretive)
+- [ ] FIDO security-key identities (`ecdsa-sk`, `ed25519-sk`) through SSH Agent
+- [ ] OpenSSH user certificates paired with a private-key or SSH Agent identity
+- [ ] PuTTY `.ppk` private-key import or conversion
+- [ ] Secure Enclave-backed P-256 identity
+- [ ] `mldsa44-ed25519` user keys for post-quantum OpenSSH compatibility
 - [ ] Keyboard-interactive / 2FA prompts
 - [ ] Agent forwarding
 - [ ] ProxyJump (saved session as jump host, including chains)
