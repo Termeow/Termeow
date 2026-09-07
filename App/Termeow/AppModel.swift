@@ -14,6 +14,7 @@ final class AppModel {
     var searchText = ""
     var editor: SessionEditorState?
     var sessionPendingDeletion: SessionProfile?
+    var tabPendingClosure: TabCloseRequest?
     var hostKeyPrompt: HostKeyPromptState?
     @ObservationIgnored
     private var hostKeyContinuation: CheckedContinuation<HostKeyDecision, Never>?
@@ -397,18 +398,34 @@ final class AppModel {
     }
 
     func closeSelectedTab() {
-        guard let id = selectedTabID, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        tabs[index].controller.disconnect()
-        tabs.remove(at: index)
-        selectedTabID = tabs.indices.contains(index) ? tabs[index].id : tabs.last?.id
-        persist()
+        guard let id = selectedTabID else { return }
+        requestCloseTab(id)
     }
 
-    func closeTab(_ id: WorkspaceTab.ID) {
+    func requestCloseTab(_ id: WorkspaceTab.ID) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        guard tab.controller.state.requiresCloseConfirmation else {
+            closeTab(id)
+            return
+        }
+        tabPendingClosure = TabCloseRequest(id: id, title: tab.controller.title)
+    }
+
+    func confirmCloseTab(_ request: TabCloseRequest) {
+        tabPendingClosure = nil
+        closeTab(request.id)
+    }
+
+    func cancelCloseTab() {
+        tabPendingClosure = nil
+    }
+
+    private func closeTab(_ id: WorkspaceTab.ID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let wasSelected = selectedTabID == id
         tabs[index].controller.disconnect()
         tabs.remove(at: index)
-        if selectedTabID == id {
+        if wasSelected {
             selectedTabID = tabs.indices.contains(index) ? tabs[index].id : tabs.last?.id
         }
         persist()
@@ -747,6 +764,11 @@ struct WorkspaceTab: Identifiable {
     let id = UUID()
     var sessionID: UUID
     var controller: ConnectionController
+}
+
+struct TabCloseRequest: Identifiable {
+    let id: WorkspaceTab.ID
+    let title: String
 }
 
 struct SessionEditorState: Identifiable {

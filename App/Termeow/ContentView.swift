@@ -29,6 +29,18 @@ struct ContentView: View {
                 secondaryButton: .cancel()
             )
         }
+        .alert(item: $model.tabPendingClosure) { request in
+            Alert(
+                title: Text(String(format: String(localized: "Close “%@”?"), request.title)),
+                message: Text("This tab has an active SSH connection. Closing it will disconnect the session."),
+                primaryButton: .destructive(Text("Close and Disconnect")) {
+                    model.confirmCloseTab(request)
+                },
+                secondaryButton: .cancel {
+                    model.cancelCloseTab()
+                }
+            )
+        }
     }
 
     private var visibility: Binding<NavigationSplitViewVisibility> {
@@ -107,7 +119,7 @@ struct TabChip: View {
                 Text(tab.controller.title)
                     .lineLimit(1)
                 Button {
-                    model.closeTab(tab.id)
+                    model.requestCloseTab(tab.id)
                 } label: {
                     Image(systemName: "xmark")
                         .font(.caption2)
@@ -168,7 +180,7 @@ struct TabChip: View {
             .disabled(!model.canMoveTab(tab.id, by: 1))
             Divider()
             Button("Close Tab", systemImage: "xmark") {
-                model.closeTab(tab.id)
+                model.requestCloseTab(tab.id)
             }
             Button("Close Other Tabs", systemImage: "xmark.circle") {
                 model.closeOtherTabs(keeping: tab.id)
