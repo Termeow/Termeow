@@ -1,0 +1,75 @@
+name: Develop snapshot
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: develop-snapshot
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    name: Archive and publish
+    if: github.ref == 'refs/heads/develop'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Archive app
+        run: |
+          xcodebuild archive \
+            -project Termeow.xcodeproj \
+            -scheme Termeow \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/Termeow.xcarchive" \
+            -skipPackagePluginValidation \
+            ARCHS='arm64 x86_64' \
+            ONLY_ACTIVE_ARCH=NO \
+            MARKETING_VERSION=0.0.0 \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
+            CODE_SIGN_IDENTITY='-' \
+            CODE_SIGNING_ALLOWED=YES
+
+      - name: Zip app
+        id: zip
+        run: |
+          app="$RUNNER_TEMP/Termeow.xcarchive/Products/Applications/Termeow.app"
+          test -d "$app"
+          short_sha="${GITHUB_SHA::7}"
+          name="Termeow-0.0.0-${GITHUB_RUN_NUMBER}-${short_sha}.zip"
+          mkdir -p dist
+          ditto -c -k --keepParent "$app" "dist/${name}"
+          echo "path=dist/${name}" >> "$GITHUB_OUTPUT"
+          lipo -info "$app/Contents/MacOS/Termeow"
+          codesign -dv --verbose=2 "$app" || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: termeow-develop
+          path: ${{ steps.zip.outputs.path }}
+          if-no-files-found: error
+
+      - name: Publish nightly pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: |
+            Ad-hoc signed macOS build from `develop` (`${{ github.sha }}`).
+
+            Not a SemVer release. Not notarized. Requires macOS 15 or later.
+
+            First launch: unzip, then right-click Termeow.app and choose Open.
+        run: |
+          printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
+          gh release delete nightly --cleanup-tag --yes || true
+          gh release create nightly \
+            --prerelease \
+            --latest=false \
+            --title "Develop snapshot ${GITHUB_RUN_NUMBER}" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --target "${GITHUB_SHA}" \
+            "${{ steps.zip.outputs.path }}"

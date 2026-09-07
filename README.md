@@ -32,6 +32,8 @@ xcodebuild -project Termeow.xcodeproj -scheme Termeow -destination 'platform=mac
 
 Land work through pull requests into `develop`. Do not push `develop` or `main` directly.
 
+Each push to `develop` also publishes an ad-hoc signed zip on the [nightly pre-release](https://github.com/Termeow/Termeow/releases/tag/nightly). That is a trial build, not a SemVer release, and it is not notarized. Unzip, then right-click `Termeow.app` and choose Open.
+
 ## Notes
 
 - Passwords and key passphrases are stored in the Keychain service `cn.termeow.Termeow`. Session JSON never stores secrets.
