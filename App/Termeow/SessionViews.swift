@@ -124,6 +124,7 @@ struct SessionSidebar: View {
                 .padding(.vertical, 6)
             }
             .focusable()
+            .focusEffectDisabled()
             .onMoveCommand(perform: moveSelection)
             .tint(.blue)
             .contextMenu { sidebarContextMenu }
