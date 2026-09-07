@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 import TermeowKit
-import UniformTypeIdentifiers
 
 private enum SessionSortOrder: String, CaseIterable, Identifiable {
     case manual
@@ -30,6 +29,14 @@ private struct SessionListSection: Identifiable {
         var groupName: String? {
             if case .group(let name) = self { return name }
             return nil
+        }
+
+        func placement(over: UUID?) -> SessionListPlacement {
+            switch self {
+            case .favorites: .favorites(over: over)
+            case .ungrouped: .ungrouped(over: over)
+            case .group(let name): .group(name, over: over)
+            }
         }
     }
 
@@ -97,6 +104,8 @@ struct SessionSidebar: View {
     @State private var newGroupDraft = ""
     @State private var groupRenameDraft = ""
     @State private var activePrompt: SessionSidebarPrompt?
+    @State private var drag: SessionDragSession?
+    @State private var frames = SessionFramePreference()
 
     var body: some View {
         @Bindable var model = model
@@ -104,24 +113,31 @@ struct SessionSidebar: View {
             SessionSearchField(text: $model.searchText)
             Divider()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
                     ForEach(sections) { section in
                         SessionSectionView(
                             section: section,
                             isExpanded: expansionBinding(for: section.id),
                             allowsDrag: !isFiltering,
+                            drag: drag,
+                            offsets: rowOffsets,
+                            rowFrames: drag?.restRows ?? frames.rows,
+                            slot: slotFrame(in: section),
                             onRename: beginRenaming,
                             onNewGroup: beginGrouping,
                             onCreateSession: { model.beginNewSession(inGroup: $0) },
                             onCreateGroup: beginCreatingGroup,
                             onRenameGroup: beginRenamingGroup,
                             onDeleteGroup: { activePrompt = .deleteGroup($0) },
-                            onDrop: applySessionDrop
+                            onDragChanged: dragChanged,
+                            onDragEnded: dragEnded
                         )
                     }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
+                .coordinateSpace(name: SessionDragSpace.name)
+                .onPreferenceChange(SessionFrameKey.self) { frames = $0 }
             }
             .focusable()
             .focusEffectDisabled()
@@ -452,6 +468,169 @@ struct SessionSidebar: View {
         sortOrderRawValue = SessionSortOrder.manual.rawValue
     }
 
+    private var rowOffsets: [UUID: CGFloat] {
+        guard let drag else { return [:] }
+        let slots = previewSlots
+        var offsets: [UUID: CGFloat] = [:]
+        for (id, rest) in drag.restRows {
+            if id == drag.id {
+                offsets[id] = drag.pointerY - drag.grabOffsetY - rest.minY
+            } else if let previewY = slots[id] {
+                offsets[id] = previewY - rest.minY
+            }
+        }
+        return offsets
+    }
+
+    private var previewSlots: [UUID: CGFloat] {
+        guard let drag else { return [:] }
+        var slots: [UUID: CGFloat] = [:]
+        for section in sections {
+            let ids = previewIDs(in: section, drag: drag)
+            var y = sectionOriginY(section, drag: drag)
+            for id in ids {
+                let height = restRow(id)?.height ?? restRow(drag.id)?.height ?? 44
+                if id != drag.id {
+                    slots[id] = y
+                }
+                y += height + 2
+            }
+        }
+        return slots
+    }
+
+    /// Local to the section row stack (origin is the first resting row, or just below the header).
+    private func slotFrame(in section: SessionListSection) -> CGRect? {
+        guard let drag, let rest = restRow(drag.id) else { return nil }
+        let ids = previewIDs(in: section, drag: drag)
+        guard let index = ids.firstIndex(of: drag.id) else { return nil }
+        let originY = sectionOriginY(section, drag: drag)
+        let y = ids.prefix(index).reduce(originY) { $0 + (restRow($1)?.height ?? rest.height) + 2 }
+        return CGRect(x: 0, y: y - originY, width: rest.width, height: rest.height)
+    }
+
+    private func sectionOriginY(_ section: SessionListSection, drag: SessionDragSession) -> CGFloat {
+        section.profiles.compactMap { restRow($0.id)?.minY }.min()
+            ?? restHeader(section.id).map { $0.maxY + 2 }
+            ?? restRow(drag.id)?.minY
+            ?? 0
+    }
+
+    private func restRow(_ id: UUID) -> CGRect? {
+        drag?.restRows[id] ?? frames.rows[id]
+    }
+
+    private func restHeader(_ id: String) -> CGRect? {
+        drag?.restHeaders[id] ?? frames.headers[id]
+    }
+
+    private func previewIDs(in section: SessionListSection, drag: SessionDragSession) -> [UUID] {
+        var ids = section.profiles.map(\.id)
+        guard let placement = drag.placement else { return ids }
+        if sameSection(placement, section.kind.placement(over: nil)) {
+            if !ids.contains(drag.id) { ids.append(drag.id) }
+            return TabReorder.previewIDs(ids, moving: drag.id, over: overID(placement))
+        }
+        return ids.filter { $0 != drag.id }
+    }
+
+    private func sameSection(_ lhs: SessionListPlacement, _ rhs: SessionListPlacement) -> Bool {
+        switch (lhs, rhs) {
+        case (.favorites, .favorites), (.ungrouped, .ungrouped): true
+        case (.group(let a, _), .group(let b, _)): a.localizedCaseInsensitiveCompare(b) == .orderedSame
+        default: false
+        }
+    }
+
+    private func overID(_ placement: SessionListPlacement) -> UUID? {
+        switch placement {
+        case .favorites(let over), .ungrouped(let over), .group(_, let over): over
+        }
+    }
+
+    private func dragChanged(id: UUID, value: DragGesture.Value, restY: CGFloat) {
+        var next: SessionDragSession
+        if let drag, drag.id == id {
+            next = drag
+        } else if drag == nil {
+            next = SessionDragSession(
+                id: id,
+                grabOffsetY: value.startLocation.y - restY,
+                pointerY: value.location.y,
+                placement: nil,
+                restRows: frames.rows,
+                restHeaders: frames.headers
+            )
+        } else {
+            return
+        }
+        next.pointerY = value.location.y
+        next.placement = hitPlacement(y: value.location.y, source: id)
+        drag = next
+    }
+
+    private func dragEnded() {
+        let pending = drag
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            drag = nil
+            if let pending {
+                applySessionDrop(
+                    pending.id,
+                    to: pending.placement ?? sectionPlacement(containing: pending.id, over: nil)
+                )
+            }
+        }
+    }
+
+    private func sectionPlacement(containing id: UUID, over: UUID?) -> SessionListPlacement {
+        if let section = sections.first(where: { $0.profiles.contains { $0.id == id } }) {
+            return section.kind.placement(over: over)
+        }
+        return .ungrouped(over: over)
+    }
+
+    private func hitPlacement(y: CGFloat, source: UUID) -> SessionListPlacement? {
+        guard let section = sections.first(where: { inSection($0, y: y) }) else {
+            return drag?.placement
+        }
+        if section.profiles.contains(where: { $0.id == source }) {
+            return section.kind.placement(
+                over: verticalTarget(ids: section.profiles.map(\.id), source: source, pointerY: y)
+            )
+        }
+        if let profile = section.profiles.first(where: { profile in
+            restRow(profile.id).map { $0.minY...$0.maxY ~= y } ?? false
+        }) {
+            return section.kind.placement(over: profile.id)
+        }
+        return section.kind.placement(over: nil)
+    }
+
+    private func inSection(_ section: SessionListSection, y: CGFloat) -> Bool {
+        let rowFrames = section.profiles.compactMap { restRow($0.id) }
+        let header = restHeader(section.id)
+        let top = header?.minY ?? rowFrames.map(\.minY).min() ?? y
+        let bottom = rowFrames.map(\.maxY).max() ?? header?.maxY ?? y
+        return (top...bottom).contains(y)
+    }
+
+    private func verticalTarget(ids: [UUID], source: UUID, pointerY: CGFloat) -> UUID? {
+        guard let sourceIndex = ids.firstIndex(of: source) else { return nil }
+        let mapped = Dictionary(uniqueKeysWithValues: ids.compactMap { id -> (UUID, CGRect)? in
+            restRow(id).map { (id, CGRect(x: $0.minY, y: 0, width: max($0.height, 1), height: 1)) }
+        })
+        guard let sourceFrame = mapped[source] else { return nil }
+        return TabReorder.targetID(
+            sourceIndex: sourceIndex,
+            sourceFrame: sourceFrame,
+            pointerX: pointerY,
+            orderedIDs: ids,
+            frames: mapped
+        )
+    }
+
     private func moveSelection(_ direction: MoveCommandDirection) {
         let ids = sections.flatMap { section -> [SessionProfile.ID] in
             collapsedSectionIDs.contains(section.id) ? [] : section.profiles.map(\.id)
@@ -472,10 +651,31 @@ struct SessionSidebar: View {
     }
 }
 
-@MainActor
-private enum SessionDragging {
-    // ponytail: one in-app drag at a time; List/Transferable drop is broken on macOS 26
-    static var id: UUID?
+private enum SessionDragSpace {
+    static let name = "session-list"
+}
+
+private struct SessionDragSession: Equatable {
+    var id: UUID
+    var grabOffsetY: CGFloat
+    var pointerY: CGFloat
+    var placement: SessionListPlacement?
+    var restRows: [UUID: CGRect]
+    var restHeaders: [String: CGRect]
+}
+
+private struct SessionFramePreference: Equatable {
+    var rows: [UUID: CGRect] = [:]
+    var headers: [String: CGRect] = [:]
+}
+
+private struct SessionFrameKey: PreferenceKey {
+    static let defaultValue = SessionFramePreference()
+    static func reduce(value: inout SessionFramePreference, nextValue: () -> SessionFramePreference) {
+        let next = nextValue()
+        value.rows.merge(next.rows, uniquingKeysWith: { $1 })
+        value.headers.merge(next.headers, uniquingKeysWith: { $1 })
+    }
 }
 
 private struct SessionSectionView: View {
@@ -483,15 +683,18 @@ private struct SessionSectionView: View {
     let section: SessionListSection
     @Binding var isExpanded: Bool
     let allowsDrag: Bool
+    let drag: SessionDragSession?
+    let offsets: [UUID: CGFloat]
+    let rowFrames: [UUID: CGRect]
+    let slot: CGRect?
     let onRename: (SessionProfile) -> Void
     let onNewGroup: (SessionProfile) -> Void
     let onCreateSession: (String) -> Void
     let onCreateGroup: () -> Void
     let onRenameGroup: (String) -> Void
     let onDeleteGroup: (String) -> Void
-    let onDrop: (SessionProfile.ID, SessionListPlacement) -> Void
-    @State private var targetedRowID: SessionProfile.ID?
-    @State private var headerTargeted = false
+    let onDragChanged: (UUID, DragGesture.Value, CGFloat) -> Void
+    let onDragEnded: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -500,66 +703,116 @@ private struct SessionSectionView: View {
                 .padding(.vertical, 4)
                 .padding(.horizontal, 4)
                 .background(headerTargeted ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                .background(frameReporter(header: section.id))
                 .contextMenu { sectionMenu }
-                .onTapGesture { isExpanded.toggle() }
-                .onDrop(of: [.plainText, .text], isTargeted: $headerTargeted) { _ in dropOnHeader() }
+                .onTapGesture { if drag == nil { isExpanded.toggle() } }
             if isExpanded {
-                ForEach(section.profiles) { profile in
-                    SessionListRow(
-                        profile: profile,
-                        selected: model.selectedProfileID == profile.id,
-                        tabStates: model.tabStates(for: profile.id),
-                        onRename: { onRename(profile) },
-                        onNewGroup: { onNewGroup(profile) }
-                    )
-                    .background(targetedRowID == profile.id ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-                    .simultaneousGesture(TapGesture().onEnded { model.selectedProfileID = profile.id })
-                    .onDrag {
-                        SessionDragging.id = profile.id
-                        return NSItemProvider(object: profile.id.uuidString as NSString)
-                    }
-                    .onDrop(of: [.plainText, .text], isTargeted: rowTarget(profile.id)) { _ in
-                        drop(on: profile)
+                ZStack(alignment: .topLeading) {
+                    slotMarker
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(section.profiles) { profile in
+                            row(for: profile)
+                        }
                     }
                 }
+                .frame(minHeight: emptySlotHeight, alignment: .top)
             }
         }
     }
 
-    private func rowTarget(_ id: SessionProfile.ID) -> Binding<Bool> {
-        Binding(
-            get: { targetedRowID == id },
-            set: { targetedRowID = $0 ? id : (targetedRowID == id ? nil : targetedRowID) }
+    @ViewBuilder
+    private func row(for profile: SessionProfile) -> some View {
+        let isDragging = drag?.id == profile.id
+        SessionListRow(
+            profile: profile,
+            selected: model.selectedProfileID == profile.id,
+            tabStates: model.tabStates(for: profile.id),
+            dragging: isDragging,
+            onRename: { onRename(profile) },
+            onNewGroup: { onNewGroup(profile) }
         )
+        .background(frameReporter(row: profile.id))
+        .offset(y: offsets[profile.id] ?? 0)
+        .zIndex(isDragging ? 10 : 0)
+        .compositingGroup()
+        .animation(isDragging || drag == nil ? nil : .easeInOut(duration: 0.2), value: offsets[profile.id] ?? 0)
+        .transaction { if isDragging || drag == nil { $0.animation = nil } }
+        .simultaneousGesture(TapGesture().onEnded { model.selectedProfileID = profile.id })
+        .highPriorityGesture(allowsDrag ? dragGesture(for: profile.id) : nil)
     }
 
-    private func drop(on profile: SessionProfile) -> Bool {
-        finishDrop(to: placement(before: profile.id))
+    private func dragGesture(for id: UUID) -> some Gesture {
+        DragGesture(minimumDistance: 10, coordinateSpace: .named(SessionDragSpace.name))
+            .onChanged { value in
+                onDragChanged(id, value, rowFrames[id]?.minY ?? value.startLocation.y)
+            }
+            .onEnded { _ in onDragEnded() }
     }
 
-    private func dropOnHeader() -> Bool {
-        finishDrop(to: headerPlacement)
-    }
-
-    private func finishDrop(to placement: SessionListPlacement) -> Bool {
-        guard allowsDrag, let id = SessionDragging.id else { return false }
-        onDrop(id, placement)
-        return true
-    }
-
-    private var headerPlacement: SessionListPlacement {
-        switch section.kind {
-        case .favorites: .favorites(before: nil)
-        case .ungrouped: .ungrouped(before: nil)
-        case .group(let name): .group(name, before: nil)
+    private func frameReporter(row id: UUID) -> some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: SessionFrameKey.self,
+                value: SessionFramePreference(rows: [id: proxy.frame(in: .named(SessionDragSpace.name))])
+            )
         }
     }
 
-    private func placement(before: UUID?) -> SessionListPlacement {
-        switch section.kind {
-        case .favorites: .favorites(before: before)
-        case .ungrouped: .ungrouped(before: before)
-        case .group(let name): .group(name, before: before)
+    private func frameReporter(header id: String) -> some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: SessionFrameKey.self,
+                value: SessionFramePreference(headers: [id: proxy.frame(in: .named(SessionDragSpace.name))])
+            )
+        }
+    }
+
+    private var headerTargeted: Bool {
+        guard let drag, let placement = drag.placement,
+              !section.profiles.contains(where: { $0.id == drag.id }) else { return false }
+        switch (section.kind, placement) {
+        case (.favorites, .favorites(let over)), (.ungrouped, .ungrouped(let over)):
+            return over == nil
+        case (.group(let name), .group(let other, let over)):
+            return over == nil && name.localizedCaseInsensitiveCompare(other) == .orderedSame
+        default:
+            return false
+        }
+    }
+
+    @ViewBuilder
+    private var slotMarker: some View {
+        if let slot, drag != nil {
+            ZStack(alignment: .top) {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Color.accentColor.opacity(0.75), lineWidth: 1.5)
+                    }
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: 20, height: 4)
+                    .padding(.top, -2)
+                    .opacity(overTarget ? 1 : 0)
+            }
+            .frame(width: slot.width, height: slot.height)
+            .offset(y: slot.minY)
+            .allowsHitTesting(false)
+            .animation(.easeInOut(duration: 0.2), value: slot.minY)
+        }
+    }
+
+    private var emptySlotHeight: CGFloat {
+        section.profiles.isEmpty ? (slot?.height ?? 0) : 0
+    }
+
+    private var overTarget: Bool {
+        switch drag?.placement {
+        case .favorites(let over)?, .ungrouped(let over)?, .group(_, let over)?:
+            over != nil
+        case .none:
+            false
         }
     }
 
@@ -613,6 +866,7 @@ private struct SessionListRow: View {
     let profile: SessionProfile
     let selected: Bool
     let tabStates: [SSHConnectionState]
+    var dragging = false
     let onRename: () -> Void
     let onNewGroup: () -> Void
 
@@ -622,9 +876,18 @@ private struct SessionListRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .background(
-                selected ? Color.blue : Color.clear,
+                dragging
+                    ? Color.accentColor.opacity(0.28)
+                    : selected ? Color.blue : Color.clear,
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
+            .overlay {
+                if dragging {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.accentColor, lineWidth: 2)
+                }
+            }
+            .shadow(color: dragging ? Color.black.opacity(0.25) : .clear, radius: dragging ? 8 : 0, y: 3)
             .onTapGesture(count: 2) {
                 model.connect(profile)
             }

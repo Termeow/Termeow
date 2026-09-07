@@ -1,9 +1,9 @@
 import Foundation
 
 public enum SessionListPlacement: Equatable, Sendable {
-    case favorites(before: UUID?)
-    case ungrouped(before: UUID?)
-    case group(String, before: UUID?)
+    case favorites(over: UUID?)
+    case ungrouped(over: UUID?)
+    case group(String, over: UUID?)
 }
 
 public enum SessionListReorder {
@@ -13,32 +13,29 @@ public enum SessionListReorder {
         to placement: SessionListPlacement
     ) -> [SessionProfile]? {
         guard let sourceIndex = profiles.firstIndex(where: { $0.id == id }) else { return nil }
+        let alreadyInDest = belongs(profiles[sourceIndex], to: placement)
 
-        var profile = profiles[sourceIndex]
+        var updated = profiles
         switch placement {
         case .favorites:
-            profile.isFavorite = true
+            updated[sourceIndex].isFavorite = true
         case .ungrouped:
-            profile.isFavorite = false
-            profile.groupName = ""
+            updated[sourceIndex].isFavorite = false
+            updated[sourceIndex].groupName = ""
         case .group(let name, _):
             let groupName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !groupName.isEmpty else { return nil }
-            profile.isFavorite = false
-            profile.groupName = groupName
+            updated[sourceIndex].isFavorite = false
+            updated[sourceIndex].groupName = groupName
         }
 
-        var result = profiles
-        result.remove(at: sourceIndex)
-
-        let before = beforeID(of: placement)
-        let insertAt: Int
-        if before == id {
-            insertAt = min(sourceIndex, result.count)
-        } else {
-            insertAt = insertionIndex(before: before, matching: { belongs($0, to: placement) }, in: result)
-        }
-        result.insert(profile, at: insertAt)
+        let over = overID(of: placement)
+        let members = updated.filter { belongs($0, to: placement) }.map(\.id)
+        let sectionIDs = alreadyInDest ? members : members.filter { $0 != id } + [id]
+        let ordered = TabReorder.previewIDs(sectionIDs, moving: id, over: over)
+        guard let source = updated.first(where: { $0.id == id }) else { return nil }
+        var result = updated.filter { $0.id != id }
+        result.insert(source, at: insertionIndex(for: id, in: ordered, among: result))
         return result == profiles ? nil : result
     }
 
@@ -69,10 +66,10 @@ public enum SessionListReorder {
         return result == profiles ? nil : result
     }
 
-    private static func beforeID(of placement: SessionListPlacement) -> UUID? {
+    private static func overID(of placement: SessionListPlacement) -> UUID? {
         switch placement {
-        case .favorites(let before), .ungrouped(let before), .group(_, let before):
-            before
+        case .favorites(let over), .ungrouped(let over), .group(_, let over):
+            over
         }
     }
 
@@ -88,17 +85,16 @@ public enum SessionListReorder {
         }
     }
 
-    private static func insertionIndex(
-        before: UUID?,
-        matching: (SessionProfile) -> Bool,
-        in profiles: [SessionProfile]
-    ) -> Int {
-        if let before, let index = profiles.firstIndex(where: { $0.id == before }) {
-            return index
+    private static func insertionIndex(for id: UUID, in ordered: [UUID], among result: [SessionProfile]) -> Int {
+        guard let position = ordered.firstIndex(of: id) else { return result.endIndex }
+        if position + 1 < ordered.count {
+            let next = ordered[position + 1]
+            return result.firstIndex(where: { $0.id == next }) ?? result.endIndex
         }
-        if let last = profiles.lastIndex(where: matching) {
-            return last + 1
+        if let previous = ordered[..<position].last,
+           let index = result.firstIndex(where: { $0.id == previous }) {
+            return index + 1
         }
-        return profiles.endIndex
+        return result.endIndex
     }
 }
