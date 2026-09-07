@@ -105,7 +105,7 @@ Update this file in the same PR as the feature.
 - [ ] Terminal color schemes (now one hardcoded dark scheme)
 - [ ] Follow system / light / dark chrome *and* terminal palette
 - [ ] OSC window title (delegate is empty)
-- [ ] `⌘G` find next
+- [x] `⌘G` find next (`⌘⇧G` find previous)
 - [ ] Clear screen shortcut
 - [ ] Select all in the scrollback
 - [ ] Encoding besides UTF-8 (GB18030 / GBK / Big5 / Shift_JIS)

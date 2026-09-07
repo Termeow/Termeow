@@ -21,6 +21,8 @@ final class AppModel {
     var findBarVisible = false
     var findQuery = ""
     var findCaseSensitive = false
+    var findMatchIndex = 0
+    var findMatchTotal = 0
     var sidebarVisible = true
     var statusMessage: String?
 
@@ -490,6 +492,32 @@ final class AppModel {
         selectedTab?.controller.disconnect()
     }
 
+    func performFind(forward: Bool) {
+        guard let terminal = selectedTab?.controller.hostedTerminal() else {
+            resetFindSummary()
+            return
+        }
+        guard !findQuery.isEmpty else {
+            terminal.dismissSearch()
+            resetFindSummary()
+            return
+        }
+        if forward {
+            _ = terminal.findForward(findQuery, caseSensitive: findCaseSensitive)
+        } else {
+            _ = terminal.findBackward(findQuery, caseSensitive: findCaseSensitive)
+        }
+        let summary = terminal.searchSummary(findQuery, caseSensitive: findCaseSensitive)
+        findMatchIndex = summary.index
+        findMatchTotal = summary.total
+    }
+
+    func dismissFind() {
+        findBarVisible = false
+        selectedTab?.controller.hostedTerminal().dismissSearch()
+        resetFindSummary()
+    }
+
     func selectRelativeTab(_ delta: Int) {
         guard let id = selectedTabID, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         let next = (index + delta + tabs.count) % max(tabs.count, 1)
@@ -502,6 +530,11 @@ final class AppModel {
         mutation(&profiles[index])
         synchronizeOpenTabs(with: profiles[index])
         persist()
+    }
+
+    private func resetFindSummary() {
+        findMatchIndex = 0
+        findMatchTotal = 0
     }
 
     private func addSessionGroupIfNeeded(_ groupName: String) {

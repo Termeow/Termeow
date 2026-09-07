@@ -5,15 +5,14 @@ import TermeowKit
 struct TerminalContainerView: View {
     @Environment(AppModel.self) private var model
     var controller: ConnectionController
-    @State private var representable = TerminalViewBox()
 
     var body: some View {
         @Bindable var model = model
         VStack(spacing: 0) {
             if model.findBarVisible {
-                FindBar(representable: representable)
+                FindBar()
             }
-            TerminalViewRepresentable(controller: controller, box: representable)
+            TerminalViewRepresentable(controller: controller)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -21,76 +20,41 @@ struct TerminalContainerView: View {
 
 struct FindBar: View {
     @Environment(AppModel.self) private var model
-    var representable: TerminalViewBox
-    @State private var matchIndex = 0
-    @State private var matchTotal = 0
 
     var body: some View {
         @Bindable var model = model
         HStack(spacing: 8) {
             TextField("Find", text: $model.findQuery)
                 .textFieldStyle(.roundedBorder)
-                .onSubmit { runSearch(forward: true) }
+                .onSubmit { model.performFind(forward: true) }
             Toggle("Case sensitive", isOn: $model.findCaseSensitive)
                 .toggleStyle(.checkbox)
             Group {
-                if matchTotal == 0 {
+                if model.findMatchTotal == 0 {
                     Text("No results")
                 } else {
-                    Text(verbatim: "\(matchIndex)/\(matchTotal)")
+                    Text(verbatim: "\(model.findMatchIndex)/\(model.findMatchTotal)")
                 }
             }
             .foregroundStyle(.secondary)
             .frame(minWidth: 70, alignment: .leading)
-            Button("Previous") { runSearch(forward: false) }
-            Button("Next") { runSearch(forward: true) }
-            Button("Done") {
-                model.findBarVisible = false
-                representable.view?.dismissSearch()
-            }
+            Button("Previous") { model.performFind(forward: false) }
+            Button("Next") { model.performFind(forward: true) }
+            Button("Done") { model.dismissFind() }
         }
         .padding(8)
         .background(.ultraThinMaterial)
-        .onChange(of: model.findQuery) { _, _ in runSearch(forward: true) }
-        .onChange(of: model.findCaseSensitive) { _, _ in runSearch(forward: true) }
-        .onAppear { runSearch(forward: true) }
+        .onChange(of: model.findQuery) { _, _ in model.performFind(forward: true) }
+        .onChange(of: model.findCaseSensitive) { _, _ in model.performFind(forward: true) }
+        .onAppear { model.performFind(forward: true) }
     }
-
-    private func runSearch(forward: Bool) {
-        guard let view = representable.view else {
-            matchIndex = 0
-            matchTotal = 0
-            return
-        }
-        if model.findQuery.isEmpty {
-            view.dismissSearch()
-            matchIndex = 0
-            matchTotal = 0
-            return
-        }
-        if forward {
-            _ = view.findForward(model.findQuery, caseSensitive: model.findCaseSensitive)
-        } else {
-            _ = view.findBackward(model.findQuery, caseSensitive: model.findCaseSensitive)
-        }
-        let summary = view.searchSummary(model.findQuery, caseSensitive: model.findCaseSensitive)
-        matchIndex = summary.index
-        matchTotal = summary.total
-    }
-}
-
-@Observable
-final class TerminalViewBox {
-    weak var view: SSHTerminalView?
 }
 
 struct TerminalViewRepresentable: NSViewRepresentable {
     var controller: ConnectionController
-    var box: TerminalViewBox
 
     func makeNSView(context: Context) -> TerminalHostView {
         let host = TerminalHostView(terminal: controller.hostedTerminal())
-        box.view = host.terminal
         DispatchQueue.main.async {
             host.terminal.window?.makeFirstResponder(host.terminal)
         }
@@ -99,7 +63,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ host: TerminalHostView, context: Context) {
         host.attach(controller.hostedTerminal())
-        box.view = host.terminal
     }
 
     static func dismantleNSView(_ host: TerminalHostView, coordinator: ()) {
