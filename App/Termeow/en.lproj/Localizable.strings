@@ -12,6 +12,7 @@
 "Case sensitive" = "Case sensitive";
 "Choose Private Key" = "Choose Private Key";
 "Choose…" = "Choose…";
+"Clear Search" = "Clear Search";
 "Close Other Tabs" = "Close Other Tabs";
 "Close Tab" = "Close Tab";
 "Close Tabs to the Right" = "Close Tabs to the Right";
@@ -82,6 +83,7 @@
 "Rename Session" = "Rename Session";
 "Rename…" = "Rename…";
 "Save" = "Save";
+"Search Sessions" = "Search Sessions";
 "Session" = "Session";
 "Session List Options" = "Session List Options";
 "Sessions" = "Sessions";
