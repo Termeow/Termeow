@@ -263,7 +263,9 @@ final class AppModel {
         } else {
             profiles.append(state.profile)
         }
-        if !state.secret.isEmpty {
+        if state.secret.isEmpty {
+            try? keychain.deleteSecret(id: state.profile.credentialID)
+        } else {
             try? keychain.saveSecret(state.secret, id: state.profile.credentialID)
         }
         selectedProfileID = state.profile.id

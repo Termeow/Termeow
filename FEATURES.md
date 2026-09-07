@@ -67,8 +67,8 @@ Update this file in the same PR as the feature.
 - [x] Interactive PTY session (Citadel / SwiftNIO SSH, not `/usr/bin/ssh`)
 - [x] `SSHSession` protocol so the UI does not talk to Citadel
 - [x] Password authentication
-- [x] Private-key authentication (Ed25519, RSA)
-- [x] Passphrase-protected keys for those algorithms
+- [x] Private-key authentication (Ed25519 OpenSSH; RSA OpenSSH and unencrypted PEM)
+- [x] Passphrase-protected OpenSSH keys (Ed25519 and RSA)
 - [x] `NSOpenPanel` security-scoped key bookmark
 - [x] Host-key prompt: Cancel / Connect Once / Trust and Save
 - [x] Reject a changed host key unless the user accepts it
@@ -80,7 +80,7 @@ Update this file in the same PR as the feature.
 - [x] PTY resize
 - [x] Mapped `SSHError` strings in the UI; details stay in `os.Logger`
 - [x] UI state follows a dropped SSH session
-- [ ] ECDSA user keys (code throws `unsupportedAlgorithm`; README still claims this path)
+- [ ] ECDSA user keys (code throws `unsupportedAlgorithm`)
 - [ ] Reliable RSA-only *host* keys (Citadel / SwiftNIO SSH limit)
 - [ ] SSH Agent (`ssh-agent`, 1Password, Secretive)
 - [ ] Keyboard-interactive / 2FA prompts

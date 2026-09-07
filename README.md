@@ -37,5 +37,5 @@ A daily job (00:00 Asia/Shanghai) publishes an ad-hoc signed zip on the [nightly
 ## Notes
 
 - Passwords and key passphrases are stored in the Keychain service `cn.termeow.Termeow`. Session JSON never stores secrets.
-- Password and Ed25519/ECDSA user keys are the main path. Some RSA-only host keys or encrypted private keys may fail; the app reports `unsupportedAlgorithm` instead of pretending the session connected.
+- Passwords, Ed25519 keys, and unencrypted RSA PEM keys are supported. ECDSA user keys, encrypted PEM keys, and some RSA/OpenSSH compatibility combinations remain unsupported.
 - App Sandbox is off in this first slice so security-scoped key bookmarks from `NSOpenPanel` can work.
