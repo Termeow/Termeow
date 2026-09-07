@@ -68,6 +68,12 @@ struct AppCommands: Commands {
         CommandGroup(after: .textEditing) {
             Button("Find…") { model.findBarVisible = true }
                 .keyboardShortcut("f", modifiers: [.command])
+            Button("Find Next") { model.performFind(forward: true) }
+                .keyboardShortcut("g", modifiers: [.command])
+                .disabled(model.findQuery.isEmpty || model.selectedTab == nil)
+            Button("Find Previous") { model.performFind(forward: false) }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .disabled(model.findQuery.isEmpty || model.selectedTab == nil)
         }
         CommandGroup(after: .sidebar) {
             Button("Previous Tab") { model.selectRelativeTab(-1) }
