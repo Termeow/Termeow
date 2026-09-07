@@ -84,6 +84,7 @@
 "Rename…" = "重命名…";
 "Save" = "保存";
 "Search Sessions" = "搜索会话";
+"Select Tab %lld" = "选择标签页 %lld";
 "Session" = "会话";
 "Session List Options" = "会话列表选项";
 "Sessions" = "会话";
