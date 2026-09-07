@@ -5,6 +5,15 @@ Native macOS SSH terminal client.
 - Site: https://termeow.cn
 - Source: https://github.com/Termeow/Termeow
 - Agent guide: [AGENTS.md](AGENTS.md)
+- Feature checklist: [FEATURES.md](FEATURES.md)
+
+## References
+
+Feature ideas are drawn from these clients. Termeow stays a native macOS app and does not copy their source, UI, or assets.
+
+- [WindTerm](https://github.com/kingToolbox/WindTerm)
+- [EdgeTerm](https://github.com/miskin-lee/EdgeTerm)
+- [VelaShell](https://github.com/joesdu/VelaShell)
 
 ## Requirements
 
