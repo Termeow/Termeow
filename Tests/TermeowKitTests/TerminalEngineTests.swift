@@ -110,6 +110,8 @@ import Testing
 
     view.clearScreenAndScrollback()
 
-    #expect(view.searchSummary("history-marker", caseSensitive: true).total == 0)
+    let clearedBuffer = String(data: view.terminal.getBufferAsData(), encoding: .utf8) ?? ""
+    #expect(!clearedBuffer.contains("history-marker"))
+    #expect(!view.findForward("history-marker", caseSensitive: true))
     #expect(sentData.isEmpty)
 }
