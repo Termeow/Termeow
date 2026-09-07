@@ -86,14 +86,13 @@ final class AppModel {
         }
         let snapshot = (try? workspaceStore.load()) ?? WorkspaceSnapshot()
         selectedProfileID = snapshot.selectedProfileID ?? profiles.first?.id
-        for sessionID in snapshot.openSessionIDs {
+        var restoredTabIDs: [Int: WorkspaceTab.ID] = [:]
+        for (index, sessionID) in snapshot.openSessionIDs.enumerated() {
             if let profile = profiles.first(where: { $0.id == sessionID }) {
-                openTab(for: profile, connect: false)
+                restoredTabIDs[index] = openTab(for: profile, connect: false, persistWorkspace: false)
             }
         }
-        if selectedTabID == nil {
-            selectedTabID = tabs.first?.id
-        }
+        selectedTabID = snapshot.selectedTabIndex.flatMap { restoredTabIDs[$0] } ?? tabs.first?.id
     }
 
     func persist() {
@@ -102,7 +101,10 @@ final class AppModel {
             try workspaceStore.save(
                 WorkspaceSnapshot(
                     openSessionIDs: tabs.map(\.sessionID),
-                    selectedProfileID: selectedProfileID
+                    selectedProfileID: selectedProfileID,
+                    selectedTabIndex: selectedTabID.flatMap { selectedID in
+                        tabs.firstIndex { $0.id == selectedID }
+                    }
                 )
             )
         } catch {
@@ -341,14 +343,28 @@ final class AppModel {
         openTab(for: currentProfile, connect: true)
     }
 
-    func openTab(for profile: SessionProfile, connect: Bool) {
+    @discardableResult
+    func openTab(
+        for profile: SessionProfile,
+        connect: Bool,
+        persistWorkspace: Bool = true
+    ) -> WorkspaceTab.ID {
         let tab = WorkspaceTab(sessionID: profile.id, controller: ConnectionController(profile: profile, model: self))
         tabs.append(tab)
         selectedTabID = tab.id
-        persist()
+        if persistWorkspace {
+            persist()
+        }
         if connect {
             tab.controller.connect()
         }
+        return tab.id
+    }
+
+    func selectTab(_ id: WorkspaceTab.ID) {
+        guard tabs.contains(where: { $0.id == id }) else { return }
+        selectedTabID = id
+        persist()
     }
 
     func closeSelectedTab() {
@@ -432,6 +448,7 @@ final class AppModel {
         guard let id = selectedTabID, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         let next = (index + delta + tabs.count) % max(tabs.count, 1)
         selectedTabID = tabs[next].id
+        persist()
     }
 
     private func updateProfile(_ id: SessionProfile.ID, mutation: (inout SessionProfile) -> Void) {
@@ -729,35 +746,5 @@ final class HostKeyBridge: @unchecked Sendable {
     @MainActor
     private func promptOnMain(_ check: HostKeyCheck) async -> HostKeyDecision {
         await model?.promptHostKey(check) ?? .cancel
-    }
-}
-
-struct WorkspaceSnapshot: Codable, Equatable {
-    var openSessionIDs: [UUID] = []
-    var selectedProfileID: UUID?
-}
-
-struct WorkspaceStore: Sendable {
-    var fileURL: URL
-
-    static func defaultURL() throws -> URL {
-        let root = try FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        ).appendingPathComponent("cn.termeow.Termeow", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        return root.appendingPathComponent("workspace.json")
-    }
-
-    func load() throws -> WorkspaceSnapshot {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return WorkspaceSnapshot() }
-        return try JSONDecoder().decode(WorkspaceSnapshot.self, from: Data(contentsOf: fileURL))
-    }
-
-    func save(_ snapshot: WorkspaceSnapshot) throws {
-        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try JSONEncoder().encode(snapshot).write(to: fileURL, options: .atomic)
     }
 }
