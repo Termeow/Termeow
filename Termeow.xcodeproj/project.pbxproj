@@ -22,6 +22,8 @@
 		A1000000000000000000004A /* SFTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005C /* SFTPView.swift */; };
 		A1000000000000000000004B /* SFTPPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005D /* SFTPPathTests.swift */; };
 		A1000000000000000000004C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005E /* SettingsView.swift */; };
+		A1000000000000000000004D /* TabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005F /* TabBarView.swift */; };
+		A1000000000000000000004E /* TabReorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000063 /* TabReorderTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +43,8 @@
 		A1000000000000000000005C /* SFTPView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPView.swift; sourceTree = "<group>"; };
 		A1000000000000000000005D /* SFTPPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPPathTests.swift; sourceTree = "<group>"; };
 		A1000000000000000000005E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A1000000000000000000005F /* TabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarView.swift; sourceTree = "<group>"; };
+		A10000000000000000000063 /* TabReorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabReorderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +83,7 @@
 				A10000000000000000000050 /* TermeowApp.swift */,
 				A10000000000000000000051 /* AppModel.swift */,
 				A10000000000000000000052 /* ContentView.swift */,
+				A1000000000000000000005F /* TabBarView.swift */,
 				A10000000000000000000053 /* SessionViews.swift */,
 				A10000000000000000000054 /* TerminalContainerView.swift */,
 				A10000000000000000000055 /* HostKeyView.swift */,
@@ -105,6 +110,7 @@
 				A10000000000000000000057 /* KeychainStoreTests.swift */,
 				A10000000000000000000058 /* TerminalEngineTests.swift */,
 				A1000000000000000000005D /* SFTPPathTests.swift */,
+				A10000000000000000000063 /* TabReorderTests.swift */,
 			);
 			name = Tests;
 			path = Tests/TermeowKitTests;
@@ -209,6 +215,7 @@
 				A10000000000000000000045 /* HostKeyView.swift in Sources */,
 				A1000000000000000000004A /* SFTPView.swift in Sources */,
 				A1000000000000000000004C /* SettingsView.swift in Sources */,
+				A1000000000000000000004D /* TabBarView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -220,6 +227,7 @@
 				A10000000000000000000047 /* KeychainStoreTests.swift in Sources */,
 				A10000000000000000000048 /* TerminalEngineTests.swift in Sources */,
 				A1000000000000000000004B /* SFTPPathTests.swift in Sources */,
+				A1000000000000000000004E /* TabReorderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
