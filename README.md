@@ -5,6 +5,7 @@ Native macOS SSH terminal client.
 - Site: https://termeow.cn
 - Source: https://github.com/Termeow/Termeow
 - Agent guide: [AGENTS.md](AGENTS.md)
+- Feature checklist: [FEATURES.md](FEATURES.md)
 
 ## Requirements
 
