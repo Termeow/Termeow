@@ -27,6 +27,7 @@ final class AppModel {
     var statusMessage: String?
     var typography = TerminalTypography.load()
     var colorSchemeID = TerminalColorSchemeID.load()
+    var scrollback = TerminalScrollback.load()
 
     @ObservationIgnored
     private var sftpWindows: [UUID: SFTPWindowController] = [:]
@@ -129,6 +130,14 @@ final class AppModel {
         guard id != colorSchemeID else { return }
         colorSchemeID = id
         id.save()
+    }
+
+    func setScrollback(_ scrollback: TerminalScrollback) {
+        let value = scrollback.clamped()
+        guard value != self.scrollback else { return }
+        self.scrollback = value
+        value.save()
+        tabs.forEach { $0.controller.applyScrollback(value) }
     }
 
     func persist() {
@@ -676,7 +685,8 @@ final class ConnectionController {
         if let hostedView { return hostedView }
         let view = SSHTerminalView(
             typography: model?.typography ?? .default,
-            colorSchemeID: model?.colorSchemeID ?? .dark
+            colorSchemeID: model?.colorSchemeID ?? .dark,
+            scrollback: model?.scrollback ?? .default
         )
         view.onSend = { [outbound] data in
             outbound.send(data)
@@ -694,6 +704,10 @@ final class ConnectionController {
         hostedView = view
         inbound.attach(view)
         return view
+    }
+
+    func applyScrollback(_ scrollback: TerminalScrollback) {
+        hostedView?.applyScrollback(scrollback)
     }
 
     var title: String { remoteTitle ?? profile.displayName }

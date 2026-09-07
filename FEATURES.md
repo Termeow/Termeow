@@ -123,7 +123,7 @@ Update this file in the same PR as the feature.
 - [ ] Block / multi-range selection
 - [ ] Mouse reporting beyond what SwiftTerm already does
 - [ ] Bell (visual / sound)
-- [ ] Scrollback size cap in Settings
+- [x] Scrollback size cap in Settings
 - [ ] Command suggestions from typed history
 - [ ] Sender / snippet bar: send text or hex to one tab or all tabs
 - [ ] Command palette

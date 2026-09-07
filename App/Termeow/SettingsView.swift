@@ -43,11 +43,28 @@ struct SettingsView: View {
                             .frame(width: 36, alignment: .trailing)
                     }
                 }
+                LabeledContent("Scrollback Lines") {
+                    Stepper(
+                        value: scrollbackLines,
+                        in: TerminalScrollback.minLines...TerminalScrollback.maxLines,
+                        step: 500
+                    ) {
+                        Text(model.scrollback.lines, format: .number.grouping(.automatic))
+                            .monospacedDigit()
+                            .frame(minWidth: 64, alignment: .trailing)
+                    }
+                }
+                .help("Limits how many off-screen terminal lines are retained.")
                 Button("Reset to Default") {
                     model.setTypography(.default)
                     model.setColorSchemeID(.dark)
+                    model.setScrollback(.default)
                 }
-                .disabled(model.typography == .default && model.colorSchemeID == .dark)
+                .disabled(
+                    model.typography == .default
+                        && model.colorSchemeID == .dark
+                        && model.scrollback == .default
+                )
             }
         }
         .formStyle(.grouped)
@@ -94,6 +111,13 @@ struct SettingsView: View {
                 value.lineHeight = height
                 model.setTypography(value)
             }
+        )
+    }
+
+    private var scrollbackLines: Binding<Int> {
+        Binding(
+            get: { model.scrollback.lines },
+            set: { model.setScrollback(TerminalScrollback(lines: $0)) }
         )
     }
 }

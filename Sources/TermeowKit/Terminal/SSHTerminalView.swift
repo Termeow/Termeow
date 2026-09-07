@@ -19,8 +19,17 @@ public final class SSHTerminalView: TerminalView {
 
     private let host = Host()
 
-    public init(typography: TerminalTypography = .default, colorSchemeID: TerminalColorSchemeID = .dark) {
-        super.init(frame: .zero, font: typography.resolvedFont())
+    public init(
+        typography: TerminalTypography = .default,
+        colorSchemeID: TerminalColorSchemeID = .dark,
+        scrollback: TerminalScrollback = .default
+    ) {
+        let scrollback = scrollback.clamped()
+        super.init(
+            frame: .zero,
+            font: typography.resolvedFont(),
+            options: TerminalOptions(scrollback: scrollback.lines)
+        )
         terminalDelegate = host
         lineSpacing = CGFloat(typography.clamped().lineHeight)
         applyColorScheme(colorSchemeID)
@@ -46,6 +55,12 @@ public final class SSHTerminalView: TerminalView {
         if abs(lineSpacing - height) > 0.001 {
             lineSpacing = height
         }
+    }
+
+    public func applyScrollback(_ scrollback: TerminalScrollback) {
+        let lines = scrollback.clamped().lines
+        guard terminal.options.scrollback != lines else { return }
+        changeScrollback(lines)
     }
 
     @available(*, unavailable)
