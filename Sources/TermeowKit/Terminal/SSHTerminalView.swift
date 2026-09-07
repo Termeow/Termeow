@@ -12,6 +12,11 @@ public final class SSHTerminalView: TerminalView {
         set { host.onSizeChanged = newValue }
     }
 
+    public var onTitleChanged: ((String) -> Void)? {
+        get { host.onTitleChanged }
+        set { host.onTitleChanged = newValue }
+    }
+
     private let host = Host()
 
     public init() {
@@ -96,13 +101,16 @@ public final class SSHTerminalView: TerminalView {
 private final class Host: TerminalViewDelegate, @unchecked Sendable {
     var onSend: ((Data) -> Void)?
     var onSizeChanged: ((Int, Int) -> Void)?
+    var onTitleChanged: ((String) -> Void)?
 
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
         guard newCols >= 2, newRows >= 1 else { return }
         onSizeChanged?(newCols, newRows)
     }
 
-    func setTerminalTitle(source: TerminalView, title: String) {}
+    func setTerminalTitle(source: TerminalView, title: String) {
+        onTitleChanged?(title)
+    }
 
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
