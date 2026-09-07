@@ -135,7 +135,7 @@ Update this file in the same PR as the feature.
 - [x] Reorder tabs
 - [ ] Pin tab / tab color
 - [ ] Background-tab activity / dirty highlight
-- [ ] Confirm `⌘W` while the tab is still connected
+- [x] Confirm `⌘W` while the tab is still connected
 - [ ] Split panes (`PaneLayout` is still `.leaf` only)
 - [ ] Local shell tab (`/bin/zsh` — architecture only; not the product core)
 

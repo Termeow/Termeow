@@ -43,4 +43,13 @@ public enum SSHConnectionState: Equatable, Sendable {
     case connecting
     case connected
     case failed(SSHError)
+
+    public var requiresCloseConfirmation: Bool {
+        switch self {
+        case .connecting, .connected:
+            true
+        case .disconnected, .failed:
+            false
+        }
+    }
 }

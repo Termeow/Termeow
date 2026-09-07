@@ -14,8 +14,10 @@
 "Choose…" = "Choose…";
 "Clear Search" = "Clear Search";
 "Close Other Tabs" = "Close Other Tabs";
+"Close and Disconnect" = "Close and Disconnect";
 "Close Tab" = "Close Tab";
 "Close Tabs to the Right" = "Close Tabs to the Right";
+"Close “%@”?" = "Close “%@”?";
 "Collapse Group" = "Collapse Group";
 "Connect" = "Connect";
 "Connect Once" = "Connect Once";
@@ -100,6 +102,7 @@
 "Timeout" = "Timeout";
 "Timeout must be at least 1 second." = "Timeout must be at least 1 second.";
 "This removes the saved session and closes its open tabs. This action cannot be undone." = "This removes the saved session and closes its open tabs. This action cannot be undone.";
+"This tab has an active SSH connection. Closing it will disconnect the session." = "This tab has an active SSH connection. Closing it will disconnect the session.";
 "Trust and Save" = "Trust and Save";
 "Unknown host key" = "Unknown host key";
 "Username" = "Username";
