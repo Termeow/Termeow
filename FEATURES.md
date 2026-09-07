@@ -21,6 +21,7 @@ Update this file in the same PR as the feature.
 - [x] Help menu opens https://termeow.cn
 - [x] Unit tests for session JSON, host keys, Keychain, SFTP paths, and the leftover `TerminalEngine`
 - [x] GitHub Actions CI and Dependabot
+- [x] GitHub Actions develop snapshot zip (ad-hoc, not notarized)
 - [ ] Settings window
 - [ ] About panel
 - [ ] App icon and Asset Catalog

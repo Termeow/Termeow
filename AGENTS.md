@@ -25,6 +25,7 @@ Also English by convention: Conventional Commit type prefixes, identifiers, type
 - `App/` is the app. `Sources/TermeowKit` is the shared library. `Tests/` covers the library.
 - Bump `CFBundleShortVersionString` (and the matching Info.plist version fields) on release.
 - Do not commit Keychain data, private keys, or signing certificates.
+- `.github/workflows/snapshot.yml` publishes an ad-hoc zip to the moving `nightly` prerelease once a day (00:00 Asia/Shanghai) or on `workflow_dispatch`. That tag is not a SemVer release; keep `v*` tags on `main`.
 
 Workflow (branches, PRs, releases, hotfixes) follows the workspace `AGENTS.md` next to this clone. Commits and PR text stay English.
 
