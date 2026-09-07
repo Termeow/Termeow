@@ -97,7 +97,7 @@ struct TabChip: View {
 
     var body: some View {
         Button {
-            model.selectedTabID = tab.id
+            model.selectTab(tab.id)
         } label: {
             HStack(spacing: 6) {
                 Circle()

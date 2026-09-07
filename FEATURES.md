@@ -130,7 +130,7 @@ Update this file in the same PR as the feature.
 - [x] Restore open session IDs after relaunch (tabs stay disconnected)
 - [x] Remember the selected session in the sidebar
 - [ ] Restore and *reconnect* tabs
-- [ ] Remember the selected tab
+- [x] Remember the selected tab
 - [ ] `⌘1`–`⌘9` jump to tab N
 - [ ] Reorder tabs
 - [ ] Pin tab / tab color
