@@ -59,6 +59,8 @@
 "Host" = "主机";
 "Host key" = "主机密钥";
 "Host key has changed" = "主机密钥已更改";
+"Hide Sidebar" = "隐藏边栏";
+"Hide Status Bar" = "隐藏状态栏";
 "Keep Alive" = "保活间隔";
 "Keep Alive must be 0 or greater." = "保活间隔必须大于或等于 0。";
 "Key bookmark saved" = "已保存密钥书签";
@@ -104,6 +106,8 @@
 "Solarized Dark" = "Solarized 深色";
 "Solarized Light" = "Solarized 浅色";
 "Sort By" = "排序方式";
+"Show Sidebar" = "显示边栏";
+"Show Status Bar" = "显示状态栏";
 "SSH command copied" = "已复制 SSH 命令";
 "Startup Command" = "启动命令";
 "System Monospaced" = "系统等宽字体";

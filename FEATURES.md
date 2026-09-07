@@ -27,7 +27,7 @@ Update this file in the same PR as the feature.
 - [ ] App icon and Asset Catalog
 - [ ] `CFBundleShortVersionString` / `MARKETING_VERSION` for SemVer releases
 - [ ] LICENSE
-- [ ] View menu (sidebar / status bar / SFTP)
+- [x] View menu (sidebar / status bar / SFTP)
 - [ ] Notifications (disconnect, long-running command)
 - [ ] Single-instance / dock reopen behavior beyond the default SwiftUI window
 - [ ] Menu bar extras / tray (reference only; not required for an SSH client)

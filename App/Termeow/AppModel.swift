@@ -23,7 +23,7 @@ final class AppModel {
     var findCaseSensitive = false
     var findMatchIndex = 0
     var findMatchTotal = 0
-    var sidebarVisible = true
+    var chromePreferences = WorkspaceChromePreferences.load()
     var statusMessage: String?
     var typography = TerminalTypography.load()
     var colorSchemeID = TerminalColorSchemeID.load()
@@ -53,6 +53,24 @@ final class AppModel {
 
     var sftpContextProfile: SessionProfile? {
         selectedTab?.controller.profile ?? selectedProfile
+    }
+
+    var sidebarVisible: Bool {
+        get { chromePreferences.sidebarVisible }
+        set {
+            guard newValue != chromePreferences.sidebarVisible else { return }
+            chromePreferences.sidebarVisible = newValue
+            chromePreferences.save()
+        }
+    }
+
+    var statusBarVisible: Bool {
+        get { chromePreferences.statusBarVisible }
+        set {
+            guard newValue != chromePreferences.statusBarVisible else { return }
+            chromePreferences.statusBarVisible = newValue
+            chromePreferences.save()
+        }
     }
 
     var filteredProfiles: [SessionProfile] {
