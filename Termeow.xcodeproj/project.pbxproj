@@ -21,6 +21,7 @@
 		A10000000000000000000049 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000059 /* Localizable.strings */; };
 		A1000000000000000000004A /* SFTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005C /* SFTPView.swift */; };
 		A1000000000000000000004B /* SFTPPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005D /* SFTPPathTests.swift */; };
+		A1000000000000000000004C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005E /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +40,7 @@
 		A1000000000000000000005B /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		A1000000000000000000005C /* SFTPView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPView.swift; sourceTree = "<group>"; };
 		A1000000000000000000005D /* SFTPPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPPathTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000005E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -81,6 +83,7 @@
 				A10000000000000000000054 /* TerminalContainerView.swift */,
 				A10000000000000000000055 /* HostKeyView.swift */,
 				A1000000000000000000005C /* SFTPView.swift */,
+				A1000000000000000000005E /* SettingsView.swift */,
 			);
 			name = App;
 			path = App/Termeow;
@@ -205,6 +208,7 @@
 				A10000000000000000000044 /* TerminalContainerView.swift in Sources */,
 				A10000000000000000000045 /* HostKeyView.swift in Sources */,
 				A1000000000000000000004A /* SFTPView.swift in Sources */,
+				A1000000000000000000004C /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

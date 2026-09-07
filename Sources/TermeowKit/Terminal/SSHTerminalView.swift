@@ -19,11 +19,23 @@ public final class SSHTerminalView: TerminalView {
 
     private let host = Host()
 
-    public init() {
-        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        super.init(frame: .zero, font: font)
+    public init(typography: TerminalTypography = .default) {
+        super.init(frame: .zero, font: typography.resolvedFont())
         terminalDelegate = host
+        lineSpacing = CGFloat(typography.clamped().lineHeight)
         applyAppearance()
+    }
+
+    public func applyTypography(_ typography: TerminalTypography) {
+        let value = typography.clamped()
+        let resolved = value.resolvedFont()
+        if font.fontName != resolved.fontName || abs(font.pointSize - resolved.pointSize) > 0.01 {
+            font = resolved
+        }
+        let height = CGFloat(value.lineHeight)
+        if abs(lineSpacing - height) > 0.001 {
+            lineSpacing = height
+        }
     }
 
     @available(*, unavailable)
