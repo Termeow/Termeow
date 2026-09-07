@@ -104,7 +104,7 @@ Update this file in the same PR as the feature.
 - [ ] User-picked font, size, and line height (now 13 pt system monospaced)
 - [ ] Terminal color schemes (now one hardcoded dark scheme)
 - [ ] Follow system / light / dark chrome *and* terminal palette
-- [ ] OSC window title (delegate is empty)
+- [x] OSC window title
 - [x] `⌘G` find next (`⌘⇧G` find previous)
 - [ ] Clear screen shortcut
 - [ ] Select all in the scrollback

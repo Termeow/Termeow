@@ -614,6 +614,7 @@ final class ConnectionController {
     var rows = 24
     var lastError: String?
     var layout: PaneLayout = .leaf
+    var remoteTitle: String?
 
     private weak var model: AppModel?
     private var session: CitadelSSHSession?
@@ -641,12 +642,17 @@ final class ConnectionController {
                 self?.noteSize(cols: cols, rows: rows)
             }
         }
+        view.onTitleChanged = { [weak self] rawTitle in
+            Task { @MainActor in
+                self?.remoteTitle = TerminalTitlePolicy.displayTitle(from: rawTitle)
+            }
+        }
         hostedView = view
         inbound.attach(view)
         return view
     }
 
-    var title: String { profile.displayName }
+    var title: String { remoteTitle ?? profile.displayName }
 
     var canReuseForConnection: Bool {
         switch state {
