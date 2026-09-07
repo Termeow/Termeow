@@ -229,6 +229,28 @@ final class AppModel {
         updateProfile(profile.id) { $0.groupName = trimmedGroupName }
     }
 
+    @discardableResult
+    func moveSession(_ id: SessionProfile.ID, to placement: SessionListPlacement) -> Bool {
+        if case .group(let name, _) = placement {
+            addSessionGroupIfNeeded(name)
+        }
+        guard let moved = SessionListReorder.moving(id, in: profiles, to: placement) else { return false }
+        profiles = moved
+        if let profile = profiles.first(where: { $0.id == id }) {
+            synchronizeOpenTabs(with: profile)
+        }
+        persist()
+        return true
+    }
+
+    @discardableResult
+    func reorderSessions(inSection orderedIDs: [SessionProfile.ID]) -> Bool {
+        guard let moved = SessionListReorder.applyingSectionOrder(orderedIDs, in: profiles) else { return false }
+        profiles = moved
+        persist()
+        return true
+    }
+
     func canUseSessionGroupName(_ name: String, excluding currentName: String? = nil) -> Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return false }

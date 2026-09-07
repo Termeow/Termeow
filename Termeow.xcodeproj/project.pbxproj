@@ -24,6 +24,7 @@
 		A1000000000000000000004C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005E /* SettingsView.swift */; };
 		A1000000000000000000004D /* TabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000005F /* TabBarView.swift */; };
 		A1000000000000000000004E /* TabReorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000063 /* TabReorderTests.swift */; };
+		A1000000000000000000004F /* SessionListReorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000064 /* SessionListReorderTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +46,7 @@
 		A1000000000000000000005E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		A1000000000000000000005F /* TabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarView.swift; sourceTree = "<group>"; };
 		A10000000000000000000063 /* TabReorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabReorderTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000064 /* SessionListReorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionListReorderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -111,6 +113,7 @@
 				A10000000000000000000058 /* TerminalEngineTests.swift */,
 				A1000000000000000000005D /* SFTPPathTests.swift */,
 				A10000000000000000000063 /* TabReorderTests.swift */,
+				A10000000000000000000064 /* SessionListReorderTests.swift */,
 			);
 			name = Tests;
 			path = Tests/TermeowKitTests;
@@ -228,6 +231,7 @@
 				A10000000000000000000048 /* TerminalEngineTests.swift in Sources */,
 				A1000000000000000000004B /* SFTPPathTests.swift in Sources */,
 				A1000000000000000000004E /* TabReorderTests.swift in Sources */,
+				A1000000000000000000004F /* SessionListReorderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
