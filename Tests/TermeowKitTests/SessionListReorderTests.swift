@@ -32,6 +32,10 @@ import Testing
 
     #expect(SessionListReorder.moving(a, in: start, to: .ungrouped(before: a)) == nil)
     #expect(SessionListReorder.moving(a, in: start, to: .group("  ", before: nil)) == nil)
+
+    let sectionOrder = SessionListReorder.applyingSectionOrder([b, a], in: start)
+    #expect(sectionOrder?.map(\.id) == [b, a, c, d])
+    #expect(SessionListReorder.applyingSectionOrder([a, b], in: start) == nil)
 }
 
 private func session(

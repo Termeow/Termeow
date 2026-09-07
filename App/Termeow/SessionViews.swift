@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import TermeowKit
+import UniformTypeIdentifiers
 
 private enum SessionSortOrder: String, CaseIterable, Identifiable {
     case manual
@@ -102,23 +103,28 @@ struct SessionSidebar: View {
         VStack(spacing: 0) {
             SessionSearchField(text: $model.searchText)
             Divider()
-            List(selection: $model.selectedProfileID) {
-                ForEach(sections) { section in
-                    SessionSectionView(
-                        section: section,
-                        isExpanded: expansionBinding(for: section.id),
-                        allowsDrag: !isFiltering,
-                        onRename: beginRenaming,
-                        onNewGroup: beginGrouping,
-                        onCreateSession: { model.beginNewSession(inGroup: $0) },
-                        onCreateGroup: beginCreatingGroup,
-                        onRenameGroup: beginRenamingGroup,
-                        onDeleteGroup: { activePrompt = .deleteGroup($0) },
-                        onDrop: applySessionDrop
-                    )
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(sections) { section in
+                        SessionSectionView(
+                            section: section,
+                            isExpanded: expansionBinding(for: section.id),
+                            allowsDrag: !isFiltering,
+                            onRename: beginRenaming,
+                            onNewGroup: beginGrouping,
+                            onCreateSession: { model.beginNewSession(inGroup: $0) },
+                            onCreateGroup: beginCreatingGroup,
+                            onRenameGroup: beginRenamingGroup,
+                            onDeleteGroup: { activePrompt = .deleteGroup($0) },
+                            onDrop: applySessionDrop
+                        )
+                    }
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
             }
-            .listStyle(.sidebar)
+            .focusable()
+            .onMoveCommand(perform: moveSelection)
             .tint(.blue)
             .contextMenu { sidebarContextMenu }
             .overlay { emptyState }
@@ -444,6 +450,31 @@ struct SessionSidebar: View {
         guard model.moveSession(id, to: placement) else { return }
         sortOrderRawValue = SessionSortOrder.manual.rawValue
     }
+
+    private func moveSelection(_ direction: MoveCommandDirection) {
+        let ids = sections.flatMap { section -> [SessionProfile.ID] in
+            collapsedSectionIDs.contains(section.id) ? [] : section.profiles.map(\.id)
+        }
+        guard !ids.isEmpty else { return }
+        guard let current = model.selectedProfileID, let index = ids.firstIndex(of: current) else {
+            model.selectedProfileID = ids[0]
+            return
+        }
+        switch direction {
+        case .up where index > 0:
+            model.selectedProfileID = ids[index - 1]
+        case .down where index + 1 < ids.count:
+            model.selectedProfileID = ids[index + 1]
+        default:
+            break
+        }
+    }
+}
+
+@MainActor
+private enum SessionDragging {
+    // ponytail: one in-app drag at a time; List/Transferable drop is broken on macOS 26
+    static var id: UUID?
 }
 
 private struct SessionSectionView: View {
@@ -462,66 +493,56 @@ private struct SessionSectionView: View {
     @State private var headerTargeted = false
 
     var body: some View {
-        Section(isExpanded: $isExpanded) {
-            ForEach(section.profiles) { profile in
-                row(for: profile)
-            }
-        } header: {
-            sectionHeader
-        }
-    }
-
-    @ViewBuilder
-    private func row(for profile: SessionProfile) -> some View {
-        let content = SessionListRow(
-            profile: profile,
-            selected: model.selectedProfileID == profile.id,
-            tabStates: model.tabStates(for: profile.id),
-            onRename: { onRename(profile) },
-            onNewGroup: { onNewGroup(profile) }
-        )
-        .tag(profile.id)
-        .listRowBackground(targetedRowID == profile.id ? Color.accentColor.opacity(0.18) : nil)
-
-        if allowsDrag {
-            content
-                .draggable(profile.id.uuidString)
-                .dropDestination(for: String.self) { items, location in
-                    drop(items, on: profile, at: location)
-                } isTargeted: { isTargeted in
-                    targetedRowID = isTargeted ? profile.id : (targetedRowID == profile.id ? nil : targetedRowID)
+        VStack(alignment: .leading, spacing: 2) {
+            header
+                .contentShape(Rectangle())
+                .padding(.vertical, 4)
+                .padding(.horizontal, 4)
+                .background(headerTargeted ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                .contextMenu { sectionMenu }
+                .onTapGesture { isExpanded.toggle() }
+                .onDrop(of: [.plainText, .text], isTargeted: $headerTargeted) { _ in dropOnHeader() }
+            if isExpanded {
+                ForEach(section.profiles) { profile in
+                    SessionListRow(
+                        profile: profile,
+                        selected: model.selectedProfileID == profile.id,
+                        tabStates: model.tabStates(for: profile.id),
+                        onRename: { onRename(profile) },
+                        onNewGroup: { onNewGroup(profile) }
+                    )
+                    .background(targetedRowID == profile.id ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                    .simultaneousGesture(TapGesture().onEnded { model.selectedProfileID = profile.id })
+                    .onDrag {
+                        SessionDragging.id = profile.id
+                        return NSItemProvider(object: profile.id.uuidString as NSString)
+                    }
+                    .onDrop(of: [.plainText, .text], isTargeted: rowTarget(profile.id)) { _ in
+                        drop(on: profile)
+                    }
                 }
-        } else {
-            content
+            }
         }
     }
 
-    @ViewBuilder
-    private var sectionHeader: some View {
-        let content = header
-            .contentShape(Rectangle())
-            .padding(.vertical, 2)
-            .background(headerTargeted ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-            .contextMenu { sectionMenu }
-
-        if allowsDrag {
-            content.dropDestination(for: String.self) { items, _ in
-                dropOnHeader(items)
-            } isTargeted: { headerTargeted = $0 }
-        } else {
-            content
-        }
+    private func rowTarget(_ id: SessionProfile.ID) -> Binding<Bool> {
+        Binding(
+            get: { targetedRowID == id },
+            set: { targetedRowID = $0 ? id : (targetedRowID == id ? nil : targetedRowID) }
+        )
     }
 
-    private func drop(_ items: [String], on profile: SessionProfile, at location: CGPoint) -> Bool {
-        guard allowsDrag, let id = items.first.flatMap(UUID.init(uuidString:)) else { return false }
-        onDrop(id, placement(droppingOn: profile, at: location))
-        return true
+    private func drop(on profile: SessionProfile) -> Bool {
+        finishDrop(to: placement(before: profile.id))
     }
 
-    private func dropOnHeader(_ items: [String]) -> Bool {
-        guard allowsDrag, let id = items.first.flatMap(UUID.init(uuidString:)) else { return false }
-        onDrop(id, headerPlacement)
+    private func dropOnHeader() -> Bool {
+        finishDrop(to: headerPlacement)
+    }
+
+    private func finishDrop(to placement: SessionListPlacement) -> Bool {
+        guard allowsDrag, let id = SessionDragging.id else { return false }
+        onDrop(id, placement)
         return true
     }
 
@@ -533,28 +554,20 @@ private struct SessionSectionView: View {
         }
     }
 
-    private func placement(droppingOn profile: SessionProfile, at location: CGPoint) -> SessionListPlacement {
-        let insertAfter = location.y > 20
-        let before: UUID?
-        if insertAfter {
-            if let index = section.profiles.firstIndex(where: { $0.id == profile.id }),
-               index + 1 < section.profiles.count {
-                before = section.profiles[index + 1].id
-            } else {
-                before = nil
-            }
-        } else {
-            before = profile.id
-        }
+    private func placement(before: UUID?) -> SessionListPlacement {
         switch section.kind {
-        case .favorites: return .favorites(before: before)
-        case .ungrouped: return .ungrouped(before: before)
-        case .group(let name): return .group(name, before: before)
+        case .favorites: .favorites(before: before)
+        case .ungrouped: .ungrouped(before: before)
+        case .group(let name): .group(name, before: before)
         }
     }
 
     private var header: some View {
         HStack(spacing: 6) {
+            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 10)
             Image(systemName: section.systemImage)
             Text(verbatim: section.title)
             Spacer()
@@ -611,13 +624,9 @@ private struct SessionListRow: View {
                 selected ? Color.blue : Color.clear,
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
-            .onTapGesture {
-                model.selectedProfileID = profile.id
+            .onTapGesture(count: 2) {
+                model.connect(profile)
             }
-            .simultaneousGesture(
-                TapGesture(count: 2)
-                    .onEnded { model.connect(profile) }
-            )
             .contextMenu { sessionMenu }
     }
 

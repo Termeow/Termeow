@@ -42,6 +42,33 @@ public enum SessionListReorder {
         return result == profiles ? nil : result
     }
 
+    /// Writes `orderedIDs` back into `profiles`, keeping every other session in place.
+    public static func applyingSectionOrder(
+        _ orderedIDs: [UUID],
+        in profiles: [SessionProfile]
+    ) -> [SessionProfile]? {
+        let idSet = Set(orderedIDs)
+        guard orderedIDs.count == idSet.count,
+              orderedIDs.allSatisfy({ id in profiles.contains { $0.id == id } }) else {
+            return nil
+        }
+        let lookup = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+        var emitted = false
+        var result: [SessionProfile] = []
+        result.reserveCapacity(profiles.count)
+        for profile in profiles {
+            if idSet.contains(profile.id) {
+                if !emitted {
+                    result.append(contentsOf: orderedIDs.compactMap { lookup[$0] })
+                    emitted = true
+                }
+            } else {
+                result.append(profile)
+            }
+        }
+        return result == profiles ? nil : result
+    }
+
     private static func beforeID(of placement: SessionListPlacement) -> UUID? {
         switch placement {
         case .favorites(let before), .ungrouped(let before), .group(_, let before):

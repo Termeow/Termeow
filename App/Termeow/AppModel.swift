@@ -243,6 +243,14 @@ final class AppModel {
         return true
     }
 
+    @discardableResult
+    func reorderSessions(inSection orderedIDs: [SessionProfile.ID]) -> Bool {
+        guard let moved = SessionListReorder.applyingSectionOrder(orderedIDs, in: profiles) else { return false }
+        profiles = moved
+        persist()
+        return true
+    }
+
     func canUseSessionGroupName(_ name: String, excluding currentName: String? = nil) -> Bool {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return false }
