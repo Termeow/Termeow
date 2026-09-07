@@ -48,8 +48,6 @@ struct AppCommands: Commands {
                 .disabled(model.selectedProfile == nil)
             Button("Disconnect") { model.disconnectSelectedTab() }
                 .disabled(model.selectedTab?.controller.canDisconnect != true)
-            Button("Open SFTP") { model.openSelectedSFTP() }
-                .disabled(model.sftpContextProfile == nil)
             Divider()
             Button(model.selectedProfile?.isFavorite == true ? "Remove from Favorites" : "Add to Favorites") {
                 if let profile = model.selectedProfile {
@@ -85,7 +83,18 @@ struct AppCommands: Commands {
                 .keyboardShortcut("k", modifiers: [.command])
                 .disabled(model.selectedTab == nil)
         }
-        CommandGroup(after: .sidebar) {
+        CommandGroup(replacing: .sidebar) {
+            Button(model.sidebarVisible ? "Hide Sidebar" : "Show Sidebar") {
+                model.sidebarVisible.toggle()
+            }
+            .keyboardShortcut("s", modifiers: [.command, .control])
+            Button(model.statusBarVisible ? "Hide Status Bar" : "Show Status Bar") {
+                model.statusBarVisible.toggle()
+            }
+            .keyboardShortcut("/", modifiers: [.command])
+            Button("Open SFTP") { model.openSelectedSFTP() }
+                .disabled(model.sftpContextProfile == nil)
+            Divider()
             Button("Previous Tab") { model.selectRelativeTab(-1) }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
             Button("Next Tab") { model.selectRelativeTab(1) }

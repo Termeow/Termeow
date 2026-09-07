@@ -59,6 +59,8 @@
 "Host" = "Host";
 "Host key" = "Host key";
 "Host key has changed" = "Host key has changed";
+"Hide Sidebar" = "Hide Sidebar";
+"Hide Status Bar" = "Hide Status Bar";
 "Keep Alive" = "Keep Alive";
 "Keep Alive must be 0 or greater." = "Keep Alive must be 0 or greater.";
 "Key bookmark saved" = "Key bookmark saved";
@@ -104,6 +106,8 @@
 "Solarized Dark" = "Solarized Dark";
 "Solarized Light" = "Solarized Light";
 "Sort By" = "Sort By";
+"Show Sidebar" = "Show Sidebar";
+"Show Status Bar" = "Show Status Bar";
 "SSH command copied" = "SSH command copied";
 "Startup Command" = "Startup Command";
 "System Monospaced" = "System Monospaced";

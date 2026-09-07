@@ -62,7 +62,11 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle(model.selectedTab?.controller.title ?? "Termeow")
             .safeAreaInset(edge: .top, spacing: 0) { TabBarView() }
-            .safeAreaInset(edge: .bottom, spacing: 0) { StatusBarView() }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if model.statusBarVisible {
+                    StatusBarView()
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .automatic) {
                     SettingsLink {
