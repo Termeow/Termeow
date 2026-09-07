@@ -36,6 +36,12 @@ public final class SSHTerminalView: TerminalView {
         feed(byteArray: [UInt8](data)[...])
     }
 
+    public func clearScreenAndScrollback() {
+        dismissSearch()
+        feedOutput(Data("\u{1b}[2J\u{1b}[H".utf8))
+        clearScrollback()
+    }
+
     public override func paste(_ sender: Any) {
         guard let text = NSPasteboard.general.string(forType: .string) else { return }
         guard PastePolicy.needsConfirmation(text) else {

@@ -106,7 +106,7 @@ Update this file in the same PR as the feature.
 - [ ] Follow system / light / dark chrome *and* terminal palette
 - [x] OSC window title
 - [x] `⌘G` find next (`⌘⇧G` find previous)
-- [ ] Clear screen shortcut
+- [x] Clear screen and scrollback (`⌘K`)
 - [ ] Select all in the scrollback
 - [ ] Encoding besides UTF-8 (GB18030 / GBK / Big5 / Shift_JIS)
 - [ ] Locale / `LANG` on the SSH shell request

@@ -74,6 +74,10 @@ struct AppCommands: Commands {
             Button("Find Previous") { model.performFind(forward: false) }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
                 .disabled(model.findQuery.isEmpty || model.selectedTab == nil)
+            Divider()
+            Button("Clear Screen") { model.clearSelectedTerminal() }
+                .keyboardShortcut("k", modifiers: [.command])
+                .disabled(model.selectedTab == nil)
         }
         CommandGroup(after: .sidebar) {
             Button("Previous Tab") { model.selectRelativeTab(-1) }
