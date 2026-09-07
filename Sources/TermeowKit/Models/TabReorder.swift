@@ -30,6 +30,25 @@ public enum TabReorder {
         return nil
     }
 
+    /// Same placement as removing `sourceID` and inserting it at `targetID`'s original index.
+    public static func previewIDs<ID: Equatable>(
+        _ ids: [ID],
+        moving sourceID: ID,
+        over targetID: ID?
+    ) -> [ID] {
+        guard let sourceIndex = ids.firstIndex(of: sourceID) else { return ids }
+        var preview = ids
+        let item = preview.remove(at: sourceIndex)
+        let insertAt: Int
+        if let targetID, let dest = ids.firstIndex(of: targetID), dest != sourceIndex {
+            insertAt = min(dest, preview.count)
+        } else {
+            insertAt = min(sourceIndex, preview.count)
+        }
+        preview.insert(item, at: insertAt)
+        return preview
+    }
+
     private static func closestID<ID: Hashable>(
         to pointerX: CGFloat,
         among ids: some Sequence<ID>,

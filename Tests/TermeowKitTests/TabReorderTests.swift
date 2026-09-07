@@ -48,3 +48,11 @@ import Testing
         ) == "c"
     )
 }
+
+@Test func tabReorderPreviewMatchesMoveOntoTargetIndex() {
+    let ids = ["a", "b", "c", "d"]
+    #expect(TabReorder.previewIDs(ids, moving: "b", over: "d") == ["a", "c", "d", "b"])
+    #expect(TabReorder.previewIDs(ids, moving: "d", over: "b") == ["a", "d", "b", "c"])
+    #expect(TabReorder.previewIDs(ids, moving: "b", over: nil) == ids)
+    #expect(TabReorder.previewIDs(ids, moving: "b", over: "b") == ids)
+}

@@ -106,14 +106,33 @@ private final class TabBarHostView: NSView {
 
     private let scrollView = TabBarScrollView()
     private let documentView = FlippedView()
+    private let slotPlaceholder: PassthroughView = {
+        let view = PassthroughView()
+        view.wantsLayer = true
+        view.layer?.cornerRadius = 11
+        view.layer?.borderWidth = 1.5
+        view.isHidden = true
+        return view
+    }()
+    private let insertionCaret: PassthroughView = {
+        let view = PassthroughView()
+        view.wantsLayer = true
+        view.layer?.cornerRadius = 2
+        view.isHidden = true
+        return view
+    }()
     private var chips: [UUID: TabChipNSView] = [:]
     private var items: [TabBarItem] = []
     private var selectedID: UUID?
     private var draggingID: UUID?
     private var dropTargetID: UUID?
+    private var laidDropTargetID: UUID?
     private var mouseMonitor: Any?
     private var trackingID: UUID?
     private var dragStart: NSPoint?
+    private var grabOffsetX: CGFloat = 0
+    private var dragPointerX: CGFloat = 0
+    private var isShowingContextMenu = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -123,6 +142,8 @@ private final class TabBarHostView: NSView {
         scrollView.horizontalScrollElasticity = .allowed
         scrollView.verticalScrollElasticity = .none
         scrollView.documentView = documentView
+        documentView.addSubview(slotPlaceholder)
+        documentView.addSubview(insertionCaret)
         addSubview(scrollView)
     }
 
@@ -142,9 +163,11 @@ private final class TabBarHostView: NSView {
             self.mouseMonitor = nil
         }
         guard window != nil else { return }
-        // ponytail: local monitor runs before NSHostingView dispatch, which can drop left clicks
-        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
-            self?.routePrimary(event) ?? event
+        // ponytail: local monitor runs before NSHostingView dispatch, which can drop clicks
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown]
+        ) { [weak self] event in
+            self?.routeMouse(event) ?? event
         }
     }
 
@@ -154,10 +177,16 @@ private final class TabBarHostView: NSView {
         layoutChips()
     }
 
-    private func routePrimary(_ event: NSEvent) -> NSEvent? {
+    private func routeMouse(_ event: NSEvent) -> NSEvent? {
+        if isShowingContextMenu { return event }
         guard event.window == window else { return event }
         switch event.type {
+        case .rightMouseDown:
+            return handleSecondaryDown(event) ? nil : event
         case .leftMouseDown:
+            if event.modifierFlags.contains(.control) {
+                return handleSecondaryDown(event) ? nil : event
+            }
             return handlePrimaryDown(event) ? nil : event
         case .leftMouseDragged, .leftMouseUp:
             guard trackingID != nil else { return event }
@@ -166,6 +195,29 @@ private final class TabBarHostView: NSView {
         default:
             return event
         }
+    }
+
+    private func handleSecondaryDown(_ event: NSEvent) -> Bool {
+        let local = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(local) else { return false }
+        guard let chip = chip(atWindowPoint: event.locationInWindow) else { return true }
+        isShowingContextMenu = true
+        // ponytail: pop on the next turn so the monitor is not nested inside the menu
+        DispatchQueue.main.async { [weak self, weak chip] in
+            chip?.popContextMenu(event)
+            self?.isShowingContextMenu = false
+        }
+        return true
+    }
+
+    private func chip(atWindowPoint point: NSPoint) -> TabChipNSView? {
+        let documentPoint = documentView.convert(point, from: nil)
+        for item in items.reversed() {
+            if let chip = chips[item.id], chip.frame.contains(documentPoint) {
+                return chip
+            }
+        }
+        return nil
     }
 
     private func handlePrimaryDown(_ event: NSEvent) -> Bool {
@@ -218,14 +270,15 @@ private final class TabBarHostView: NSView {
             let chip = chips[item.id] ?? {
                 let created = TabChipNSView()
                 created.host = self
-                documentView.addSubview(created)
+                created.wantsLayer = true
+                created.layer?.masksToBounds = false
+                documentView.addSubview(created, positioned: .below, relativeTo: insertionCaret)
                 chips[item.id] = created
                 return created
             }()
             chip.item = item
             chip.selected = item.id == selectedID
             chip.dragging = item.id == draggingID
-            chip.dropTargeted = item.id == dropTargetID
             chip.needsDisplay = true
         }
         layoutChips()
@@ -233,12 +286,19 @@ private final class TabBarHostView: NSView {
 
     func beginDrag(of id: UUID, documentX: CGFloat) {
         draggingID = id
+        dragPointerX = documentX
+        if let chip = chips[id] {
+            grabOffsetX = documentX - chip.frame.minX
+            documentView.addSubview(chip, positioned: .above, relativeTo: insertionCaret)
+        }
+        laidDropTargetID = nil
         updateDropTarget(documentX: documentX)
         reload(items: items, selectedID: selectedID)
     }
 
     func updateDrag(of id: UUID, documentX: CGFloat) {
         draggingID = id
+        dragPointerX = documentX
         updateDropTarget(documentX: documentX)
         reload(items: items, selectedID: selectedID)
     }
@@ -248,6 +308,10 @@ private final class TabBarHostView: NSView {
         let targetID = dropTargetID
         draggingID = nil
         dropTargetID = nil
+        laidDropTargetID = nil
+        grabOffsetX = 0
+        insertionCaret.isHidden = true
+        slotPlaceholder.isHidden = true
         reload(items: items, selectedID: selectedID)
         guard let sourceID, let targetID else { return }
         actions.onReorder(sourceID, targetID)
@@ -255,39 +319,131 @@ private final class TabBarHostView: NSView {
 
     private func updateDropTarget(documentX: CGFloat) {
         guard let sourceID = draggingID,
-              let sourceIndex = items.firstIndex(where: { $0.id == sourceID }),
-              let sourceChip = chips[sourceID] else {
+              let sourceIndex = items.firstIndex(where: { $0.id == sourceID }) else {
+            dropTargetID = nil
+            return
+        }
+        let frames = restingFrames()
+        guard let sourceFrame = frames[sourceID] else {
             dropTargetID = nil
             return
         }
         dropTargetID = TabReorder.targetID(
             sourceIndex: sourceIndex,
-            sourceFrame: sourceChip.frame,
+            sourceFrame: sourceFrame,
             pointerX: documentX,
             orderedIDs: items.map(\.id),
-            frames: Dictionary(uniqueKeysWithValues: items.compactMap { item in
-                chips[item.id].map { (item.id, $0.frame) }
-            })
+            frames: frames
         )
     }
 
-    private func layoutChips() {
+    private func restingFrames() -> [UUID: CGRect] {
         var x: CGFloat = 10
         let chipHeight: CGFloat = 22
         let y = max((bounds.height - chipHeight) / 2, 0)
+        var frames: [UUID: CGRect] = [:]
         for item in items {
             guard let chip = chips[item.id] else { continue }
             let width = chip.preferredWidth
-            chip.frame = CGRect(x: x, y: y, width: width, height: chipHeight)
+            frames[item.id] = CGRect(x: x, y: y, width: width, height: chipHeight)
             x += width + 6
         }
+        return frames
+    }
+
+    private func layoutChips() {
+        let chipHeight: CGFloat = 22
+        let y = max((bounds.height - chipHeight) / 2, 0)
+        let ids = items.map(\.id)
+        let order = draggingID.map { TabReorder.previewIDs(ids, moving: $0, over: dropTargetID) } ?? ids
+        let animateNeighbors = draggingID != nil && dropTargetID != laidDropTargetID
+        laidDropTargetID = dropTargetID
+
+        var x: CGFloat = 10
+        var slot: CGRect?
+        var neighborFrames: [(TabChipNSView, CGRect)] = []
+        for id in order {
+            guard let chip = chips[id] else { continue }
+            let width = chip.preferredWidth
+            let rest = CGRect(x: x, y: y, width: width, height: chipHeight)
+            if id == draggingID {
+                slot = rest
+                chip.layer?.zPosition = 10
+                chip.frame = CGRect(x: dragPointerX - grabOffsetX, y: y - 3, width: width, height: chipHeight)
+            } else {
+                chip.layer?.zPosition = 0
+                neighborFrames.append((chip, rest))
+            }
+            x += width + 6
+        }
+
+        let applyNeighborsAndMarkers = { (animated: Bool) in
+            for (chip, frame) in neighborFrames {
+                if animated {
+                    chip.animator().frame = frame
+                } else {
+                    chip.frame = frame
+                }
+            }
+            self.updateDragMarkers(slot: slot, animated: animated)
+        }
+        if animateNeighbors {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                applyNeighborsAndMarkers(true)
+            }
+        } else {
+            applyNeighborsAndMarkers(false)
+        }
+
         let width = max(x + 4, bounds.width)
         documentView.frame = CGRect(x: 0, y: 0, width: width, height: max(bounds.height, 36))
+    }
+
+    private func updateDragMarkers(slot: CGRect?, animated: Bool) {
+        slotPlaceholder.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.75).cgColor
+        slotPlaceholder.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
+        insertionCaret.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        insertionCaret.layer?.zPosition = 9
+        guard let slot, draggingID != nil else {
+            slotPlaceholder.isHidden = true
+            insertionCaret.isHidden = true
+            return
+        }
+
+        slotPlaceholder.isHidden = false
+        if animated {
+            slotPlaceholder.animator().frame = slot
+        } else {
+            slotPlaceholder.frame = slot
+        }
+
+        let caret = CGRect(x: slot.minX - 2, y: slot.midY - 10, width: 4, height: 20)
+        let showCaret = dropTargetID != nil
+        if showCaret, insertionCaret.isHidden {
+            insertionCaret.frame = caret
+            insertionCaret.isHidden = false
+        } else if showCaret {
+            insertionCaret.isHidden = false
+            if animated {
+                insertionCaret.animator().frame = caret
+            } else {
+                insertionCaret.frame = caret
+            }
+        } else {
+            insertionCaret.isHidden = true
+        }
     }
 }
 
 private final class TabBarScrollView: NSScrollView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+private final class PassthroughView: NSView {
+    override var isOpaque: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 private final class FlippedView: NSView {
@@ -310,8 +466,9 @@ private final class TabChipNSView: NSView {
         tabCount: 1
     )
     var selected = false
-    var dragging = false
-    var dropTargeted = false
+    var dragging = false {
+        didSet { applyDragChrome() }
+    }
 
     private let closeButton = TabCloseNSButton()
     private let titleFont = NSFont.systemFont(ofSize: 13)
@@ -361,19 +518,19 @@ private final class TabChipNSView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        alphaValue = dragging ? 0.7 : 1
         setAccessibilityLabel(item.title)
         setAccessibilitySelected(selected)
 
         let capsule = NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2)
-        if selected {
+        if dragging {
+            NSColor.controlAccentColor.withAlphaComponent(0.28).setFill()
+            capsule.fill()
+            NSColor.controlAccentColor.setStroke()
+            capsule.lineWidth = 2
+            capsule.stroke()
+        } else if selected {
             NSColor.quaternaryLabelColor.withAlphaComponent(0.35).setFill()
             capsule.fill()
-        }
-        if dropTargeted {
-            NSColor.controlAccentColor.setStroke()
-            capsule.lineWidth = 1.5
-            capsule.stroke()
         }
 
         let dot = NSRect(x: 10, y: (bounds.height - 7) / 2, width: 7, height: 7)
@@ -399,12 +556,26 @@ private final class TabChipNSView: NSView {
         )
     }
 
+    private func applyDragChrome() {
+        wantsLayer = true
+        layer?.masksToBounds = false
+        if dragging {
+            layer?.shadowColor = NSColor.black.cgColor
+            layer?.shadowOpacity = 0.45
+            layer?.shadowRadius = 8
+            layer?.shadowOffset = CGSize(width: 0, height: 3)
+        } else {
+            layer?.shadowOpacity = 0
+            layer?.shadowRadius = 0
+        }
+    }
+
     func hitClose(windowPoint: NSPoint) -> Bool {
         closeButton.frame.contains(convert(windowPoint, from: nil))
     }
 
-    override func menu(for event: NSEvent) -> NSMenu? {
-        contextMenu()
+    func popContextMenu(_ event: NSEvent) {
+        NSMenu.popUpContextMenu(contextMenu(), with: event, for: self)
     }
 
     override func accessibilityPerformPress() -> Bool {
