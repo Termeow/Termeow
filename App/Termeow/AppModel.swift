@@ -25,6 +25,7 @@ final class AppModel {
     var findMatchTotal = 0
     var sidebarVisible = true
     var statusMessage: String?
+    var typography = TerminalTypography.load()
 
     @ObservationIgnored
     private var sftpWindows: [UUID: SFTPWindowController] = [:]
@@ -96,6 +97,13 @@ final class AppModel {
             }
         }
         selectedTabID = snapshot.selectedTabIndex.flatMap { restoredTabIDs[$0] } ?? tabs.first?.id
+    }
+
+    func setTypography(_ typography: TerminalTypography) {
+        let value = typography.clamped()
+        guard value != self.typography else { return }
+        self.typography = value
+        value.save()
     }
 
     func persist() {
@@ -641,7 +649,7 @@ final class ConnectionController {
 
     func hostedTerminal() -> SSHTerminalView {
         if let hostedView { return hostedView }
-        let view = SSHTerminalView()
+        let view = SSHTerminalView(typography: model?.typography ?? .default)
         view.onSend = { [outbound] data in
             outbound.send(data)
         }

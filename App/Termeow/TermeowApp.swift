@@ -21,6 +21,12 @@ struct TermeowApp: App {
         .commands {
             AppCommands(model: model)
         }
+
+        Settings {
+            SettingsView()
+                .environment(model)
+        }
+        .windowResizability(.contentSize)
     }
 }
 

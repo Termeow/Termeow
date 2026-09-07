@@ -52,6 +52,7 @@
 "Find Next" = "Find Next";
 "Find Previous" = "Find Previous";
 "Find…" = "Find…";
+"Font" = "Font";
 "Group" = "Group";
 "Host" = "Host";
 "Host key" = "Host key";
@@ -60,6 +61,7 @@
 "Keep Alive must be 0 or greater." = "Keep Alive must be 0 or greater.";
 "Key bookmark saved" = "Key bookmark saved";
 "Last Used" = "Last Used";
+"Line Height" = "Line Height";
 "Method" = "Method";
 "Name" = "Name";
 "New Group" = "New Group";
@@ -82,6 +84,7 @@
 "Private Key" = "Private Key";
 "Ready" = "Ready";
 "Reconnect" = "Reconnect";
+"Reset to Default" = "Reset to Default";
 "Remove from Favorites" = "Remove from Favorites";
 "Rename Group" = "Rename Group";
 "Rename Group…" = "Rename Group…";
@@ -93,11 +96,14 @@
 "Session" = "Session";
 "Session List Options" = "Session List Options";
 "Sessions" = "Sessions";
+"Settings…" = "Settings…";
 "Sessions in this group will be moved to Sessions." = "Sessions in this group will be moved to Sessions.";
 "Sort By" = "Sort By";
 "SSH command copied" = "SSH command copied";
 "Startup Command" = "Startup Command";
+"System Monospaced" = "System Monospaced";
 "TERM" = "TERM";
+"Terminal" = "Terminal";
 "Termeow Help" = "Termeow Help";
 "The authenticity of host '%@:%ld' can't be established.\n\n%@ key fingerprint:\n%@\n\nDo you want to continue connecting?" = "The authenticity of host '%@:%ld' can't be established.\n\n%@ key fingerprint:\n%@\n\nDo you want to continue connecting?";
 "The host key does not match the saved key. An attacker may be intercepting this connection." = "The host key does not match the saved key. An attacker may be intercepting this connection.";

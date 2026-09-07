@@ -12,7 +12,7 @@ struct TerminalContainerView: View {
             if model.findBarVisible {
                 FindBar()
             }
-            TerminalViewRepresentable(controller: controller)
+            TerminalViewRepresentable(controller: controller, typography: model.typography)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -52,9 +52,11 @@ struct FindBar: View {
 
 struct TerminalViewRepresentable: NSViewRepresentable {
     var controller: ConnectionController
+    var typography: TerminalTypography
 
     func makeNSView(context: Context) -> TerminalHostView {
         let host = TerminalHostView(terminal: controller.hostedTerminal())
+        host.terminal.applyTypography(typography)
         DispatchQueue.main.async {
             host.terminal.window?.makeFirstResponder(host.terminal)
         }
@@ -63,6 +65,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ host: TerminalHostView, context: Context) {
         host.attach(controller.hostedTerminal())
+        host.terminal.applyTypography(typography)
     }
 
     static func dismantleNSView(_ host: TerminalHostView, coordinator: ()) {

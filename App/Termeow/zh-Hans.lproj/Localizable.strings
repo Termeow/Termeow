@@ -52,6 +52,7 @@
 "Find Next" = "查找下一个";
 "Find Previous" = "查找上一个";
 "Find…" = "查找…";
+"Font" = "字体";
 "Group" = "分组";
 "Host" = "主机";
 "Host key" = "主机密钥";
@@ -60,6 +61,7 @@
 "Keep Alive must be 0 or greater." = "保活间隔必须大于或等于 0。";
 "Key bookmark saved" = "已保存密钥书签";
 "Last Used" = "最近使用";
+"Line Height" = "行高";
 "Method" = "方式";
 "Name" = "名称";
 "New Group" = "新建分组";
@@ -82,6 +84,7 @@
 "Private Key" = "私钥";
 "Ready" = "就绪";
 "Reconnect" = "重新连接";
+"Reset to Default" = "恢复默认";
 "Remove from Favorites" = "从收藏中移除";
 "Rename Group" = "重命名分组";
 "Rename Group…" = "重命名分组…";
@@ -93,11 +96,14 @@
 "Session" = "会话";
 "Session List Options" = "会话列表选项";
 "Sessions" = "会话";
+"Settings…" = "设置…";
 "Sessions in this group will be moved to Sessions." = "此分组中的会话将移到“会话”。";
 "Sort By" = "排序方式";
 "SSH command copied" = "已复制 SSH 命令";
 "Startup Command" = "启动命令";
+"System Monospaced" = "系统等宽字体";
 "TERM" = "TERM";
+"Terminal" = "终端";
 "Termeow Help" = "Termeow 帮助";
 "The authenticity of host '%@:%ld' can't be established.\n\n%@ key fingerprint:\n%@\n\nDo you want to continue connecting?" = "无法验证主机“%@:%ld”的真实性。\n\n%@ 密钥指纹：\n%@\n\n是否继续连接？";
 "The host key does not match the saved key. An attacker may be intercepting this connection." = "主机密钥与已保存的密钥不匹配。攻击者可能正在拦截此连接。";

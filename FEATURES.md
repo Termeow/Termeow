@@ -22,7 +22,7 @@ Update this file in the same PR as the feature.
 - [x] Unit tests for session JSON, host keys, Keychain, SFTP paths, and the leftover `TerminalEngine`
 - [x] GitHub Actions CI and Dependabot
 - [x] GitHub Actions develop snapshot zip (ad-hoc, not notarized)
-- [ ] Settings window
+- [x] Settings window
 - [ ] About panel
 - [ ] App icon and Asset Catalog
 - [ ] `CFBundleShortVersionString` / `MARKETING_VERSION` for SemVer releases
@@ -110,7 +110,7 @@ Update this file in the same PR as the feature.
 - [x] Confirm a large or many-line paste
 - [x] Find (`⌘F`): next, previous, case sensitive
 - [x] Status bar: host:port, state, cols×rows, last error
-- [ ] User-picked font, size, and line height (now 13 pt system monospaced)
+- [x] User-picked font, size, and line height
 - [ ] Terminal color schemes (now one hardcoded dark scheme)
 - [ ] Follow system / light / dark chrome *and* terminal palette
 - [x] OSC window title
