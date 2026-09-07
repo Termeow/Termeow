@@ -237,7 +237,11 @@ struct StatusBarView: View {
                 Text(message)
             }
             SettingsLink {
-                Text(model.typography.statusLabel)
+                HStack(spacing: 6) {
+                    Text(model.typography.statusLabel)
+                    Text("·")
+                    Text(LocalizedStringKey(model.colorSchemeID.title))
+                }
             }
             .buttonStyle(.plain)
             .help("Settings…")

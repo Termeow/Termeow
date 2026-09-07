@@ -9,6 +9,11 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Terminal") {
+                Picker("Color Scheme", selection: colorSchemeID) {
+                    ForEach(TerminalColorSchemeID.allCases) { id in
+                        Text(LocalizedStringKey(id.title)).tag(id)
+                    }
+                }
                 Picker("Font", selection: fontName) {
                     Text("System Monospaced").tag("")
                     if !model.typography.fontName.isEmpty,
@@ -40,8 +45,9 @@ struct SettingsView: View {
                 }
                 Button("Reset to Default") {
                     model.setTypography(.default)
+                    model.setColorSchemeID(.dark)
                 }
-                .disabled(model.typography == .default)
+                .disabled(model.typography == .default && model.colorSchemeID == .dark)
             }
         }
         .formStyle(.grouped)
@@ -49,6 +55,13 @@ struct SettingsView: View {
         .onAppear {
             fonts = MonospacedFontChoice.all
         }
+    }
+
+    private var colorSchemeID: Binding<TerminalColorSchemeID> {
+        Binding(
+            get: { model.colorSchemeID },
+            set: { model.setColorSchemeID($0) }
+        )
     }
 
     private var fontName: Binding<String> {

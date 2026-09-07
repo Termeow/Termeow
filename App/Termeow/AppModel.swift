@@ -26,6 +26,7 @@ final class AppModel {
     var sidebarVisible = true
     var statusMessage: String?
     var typography = TerminalTypography.load()
+    var colorSchemeID = TerminalColorSchemeID.load()
 
     @ObservationIgnored
     private var sftpWindows: [UUID: SFTPWindowController] = [:]
@@ -104,6 +105,12 @@ final class AppModel {
         guard value != self.typography else { return }
         self.typography = value
         value.save()
+    }
+
+    func setColorSchemeID(_ id: TerminalColorSchemeID) {
+        guard id != colorSchemeID else { return }
+        colorSchemeID = id
+        id.save()
     }
 
     func persist() {
@@ -649,7 +656,10 @@ final class ConnectionController {
 
     func hostedTerminal() -> SSHTerminalView {
         if let hostedView { return hostedView }
-        let view = SSHTerminalView(typography: model?.typography ?? .default)
+        let view = SSHTerminalView(
+            typography: model?.typography ?? .default,
+            colorSchemeID: model?.colorSchemeID ?? .dark
+        )
         view.onSend = { [outbound] data in
             outbound.send(data)
         }

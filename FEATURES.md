@@ -111,7 +111,7 @@ Update this file in the same PR as the feature.
 - [x] Find (`⌘F`): next, previous, case sensitive
 - [x] Status bar: host:port, state, cols×rows, last error
 - [x] User-picked font, size, and line height
-- [ ] Terminal color schemes (now one hardcoded dark scheme)
+- [x] Terminal color schemes
 - [ ] Follow system / light / dark chrome *and* terminal palette
 - [x] OSC window title
 - [x] `⌘G` find next (`⌘⇧G` find previous)
