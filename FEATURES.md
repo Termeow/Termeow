@@ -122,7 +122,7 @@ Update this file in the same PR as the feature.
 - [ ] Line-number and timestamp gutter
 - [ ] Block / multi-range selection
 - [ ] Mouse reporting beyond what SwiftTerm already does
-- [ ] Bell (visual / sound)
+- [x] Bell (visual / sound)
 - [x] Scrollback size cap in Settings
 - [ ] Command suggestions from typed history
 - [ ] Sender / snippet bar: send text or hex to one tab or all tabs
