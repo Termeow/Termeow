@@ -14,6 +14,12 @@ struct SettingsView: View {
                         Text(LocalizedStringKey(id.title)).tag(id)
                     }
                 }
+                Picker("Bell", selection: bellStyle) {
+                    ForEach(TerminalBellStyle.allCases) { style in
+                        Text(LocalizedStringKey(style.title)).tag(style)
+                    }
+                }
+                .help("Choose how the terminal responds when a remote program sends a bell.")
                 Picker("Font", selection: fontName) {
                     Text("System Monospaced").tag("")
                     if !model.typography.fontName.isEmpty,
@@ -59,11 +65,13 @@ struct SettingsView: View {
                     model.setTypography(.default)
                     model.setColorSchemeID(.dark)
                     model.setScrollback(.default)
+                    model.setBellStyle(.default)
                 }
                 .disabled(
                     model.typography == .default
                         && model.colorSchemeID == .dark
                         && model.scrollback == .default
+                        && model.bellStyle == .default
                 )
             }
         }
@@ -78,6 +86,13 @@ struct SettingsView: View {
         Binding(
             get: { model.colorSchemeID },
             set: { model.setColorSchemeID($0) }
+        )
+    }
+
+    private var bellStyle: Binding<TerminalBellStyle> {
+        Binding(
+            get: { model.bellStyle },
+            set: { model.setBellStyle($0) }
         )
     }
 
