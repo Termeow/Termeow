@@ -144,7 +144,7 @@ Update this file in the same PR as the feature.
 - [ ] Pin tab / tab color
 - [ ] Background-tab activity / dirty highlight
 - [x] Confirm `⌘W` while the tab is still connected
-- [ ] Split panes (`PaneLayout` is still `.leaf` only)
+- [x] Recursive horizontal and vertical split panes with independent SSH connections
 - [ ] Local shell tab (`/bin/zsh` — architecture only; not the product core)
 
 ## SFTP

@@ -16,13 +16,14 @@ struct TabBarView: View {
             TabBarItem(
                 id: tab.id,
                 title: tab.controller.title,
-                state: tab.controller.state,
+                state: tab.state,
                 canReconnect: tab.controller.canReconnect,
                 canDisconnect: tab.controller.canDisconnect,
                 canMoveLeft: model.canMoveTab(tab.id, by: -1),
                 canMoveRight: model.canMoveTab(tab.id, by: 1),
                 hasTabsToRight: model.hasTabsToRight(of: tab.id),
-                tabCount: model.tabs.count
+                tabCount: model.tabs.count,
+                paneCount: tab.paneCount
             )
         }
     }
@@ -39,6 +40,8 @@ struct TabBarView: View {
                 guard let tab = model.tabs.first(where: { $0.id == id }) else { return }
                 model.openSFTP(tab.controller.profile)
             },
+            onSplit: { model.splitPane(in: $0, axis: $1) },
+            onClosePane: { model.requestClosePane(in: $0) },
             onMove: { model.moveTab($0, by: $1) },
             onCloseOthers: { model.closeOtherTabs(keeping: $0) },
             onCloseToRight: { model.closeTabsToRight(of: $0) }
@@ -56,6 +59,7 @@ private struct TabBarItem: Equatable {
     var canMoveRight: Bool
     var hasTabsToRight: Bool
     var tabCount: Int
+    var paneCount: Int
 }
 
 private struct TabBarActions {
@@ -66,6 +70,8 @@ private struct TabBarActions {
     var onDisconnect: (UUID) -> Void
     var onDuplicate: (UUID) -> Void
     var onOpenSFTP: (UUID) -> Void
+    var onSplit: (UUID, PaneSplitAxis) -> Void
+    var onClosePane: (UUID) -> Void
     var onMove: (UUID, Int) -> Void
     var onCloseOthers: (UUID) -> Void
     var onCloseToRight: (UUID) -> Void
@@ -99,6 +105,8 @@ private final class TabBarHostView: NSView {
         onDisconnect: { _ in },
         onDuplicate: { _ in },
         onOpenSFTP: { _ in },
+        onSplit: { _, _ in },
+        onClosePane: { _ in },
         onMove: { _, _ in },
         onCloseOthers: { _ in },
         onCloseToRight: { _ in }
@@ -463,7 +471,8 @@ private final class TabChipNSView: NSView {
         canMoveLeft: false,
         canMoveRight: false,
         hasTabsToRight: false,
-        tabCount: 1
+        tabCount: 1,
+        paneCount: 1
     )
     var selected = false
     var dragging = false {
@@ -602,6 +611,10 @@ private final class TabChipNSView: NSView {
         menu.addItem(menuItem(String(localized: "Duplicate Tab"), #selector(duplicateTab)))
         menu.addItem(menuItem(String(localized: "Open SFTP"), #selector(openSFTP)))
         menu.addItem(.separator())
+        menu.addItem(menuItem(String(localized: "Split Pane Vertically"), #selector(splitVertically)))
+        menu.addItem(menuItem(String(localized: "Split Pane Horizontally"), #selector(splitHorizontally)))
+        menu.addItem(menuItem(String(localized: "Close Active Pane"), #selector(closePane), enabled: item.paneCount > 1))
+        menu.addItem(.separator())
         menu.addItem(menuItem(String(localized: "Move Tab Left"), #selector(moveTabLeft), enabled: item.canMoveLeft))
         menu.addItem(menuItem(String(localized: "Move Tab Right"), #selector(moveTabRight), enabled: item.canMoveRight))
         menu.addItem(.separator())
@@ -623,6 +636,9 @@ private final class TabChipNSView: NSView {
     @objc private func disconnectTab() { host?.actions.onDisconnect(item.id) }
     @objc private func duplicateTab() { host?.actions.onDuplicate(item.id) }
     @objc private func openSFTP() { host?.actions.onOpenSFTP(item.id) }
+    @objc private func splitVertically() { host?.actions.onSplit(item.id, .vertical) }
+    @objc private func splitHorizontally() { host?.actions.onSplit(item.id, .horizontal) }
+    @objc private func closePane() { host?.actions.onClosePane(item.id) }
     @objc private func moveTabLeft() { host?.actions.onMove(item.id, -1) }
     @objc private func moveTabRight() { host?.actions.onMove(item.id, 1) }
     @objc private func closeOthers() { host?.actions.onCloseOthers(item.id) }

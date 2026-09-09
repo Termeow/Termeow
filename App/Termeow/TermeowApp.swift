@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import TermeowKit
 
 @main
 struct TermeowApp: App {
@@ -68,6 +69,25 @@ struct AppCommands: Commands {
                 .disabled(model.selectedProfile == nil)
             Button("Delete Session") { model.deleteSelected() }
                 .disabled(model.selectedProfile == nil)
+        }
+        CommandMenu("Pane") {
+            Button("Split Pane Vertically") { model.splitSelectedPane(.vertical) }
+                .keyboardShortcut("d", modifiers: [.command])
+                .disabled(model.selectedTab == nil)
+            Button("Split Pane Horizontally") { model.splitSelectedPane(.horizontal) }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(model.selectedTab == nil)
+            Divider()
+            Button("Focus Previous Pane") { model.selectRelativePane(-1) }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                .disabled(model.selectedPaneCount < 2)
+            Button("Focus Next Pane") { model.selectRelativePane(1) }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                .disabled(model.selectedPaneCount < 2)
+            Divider()
+            Button("Close Pane") { model.requestCloseSelectedPane() }
+                .keyboardShortcut("w", modifiers: [.command, .option])
+                .disabled(model.selectedTab == nil)
         }
         CommandGroup(after: .textEditing) {
             Button("Find…") { model.findBarVisible = true }

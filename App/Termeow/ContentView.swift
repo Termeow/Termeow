@@ -32,12 +32,24 @@ struct ContentView: View {
         .alert(item: $model.tabPendingClosure) { request in
             Alert(
                 title: Text(String(format: String(localized: "Close “%@”?"), request.title)),
-                message: Text("This tab has an active SSH connection. Closing it will disconnect the session."),
+                message: Text("This tab has active SSH connections. Closing it will disconnect all sessions."),
                 primaryButton: .destructive(Text("Close and Disconnect")) {
                     model.confirmCloseTab(request)
                 },
                 secondaryButton: .cancel {
                     model.cancelCloseTab()
+                }
+            )
+        }
+        .alert(item: $model.panePendingClosure) { request in
+            Alert(
+                title: Text(String(format: String(localized: "Close “%@” Pane?"), request.title)),
+                message: Text("This pane has an active SSH connection. Closing it will disconnect the session."),
+                primaryButton: .destructive(Text("Close and Disconnect")) {
+                    model.confirmClosePane(request)
+                },
+                secondaryButton: .cancel {
+                    model.cancelClosePane()
                 }
             )
         }
@@ -87,8 +99,8 @@ struct ContentView: View {
     @ViewBuilder
     private var detailBody: some View {
         if let tab = model.selectedTab {
-            TerminalContainerView(controller: tab.controller)
-                .id(tab.controller.id)
+            TerminalWorkspaceView(tabID: tab.id)
+                .id(tab.id)
         } else {
             EmptyTerminalView()
         }
@@ -104,6 +116,16 @@ struct StatusBarView: View {
                 Text(verbatim: "\(tab.controller.profile.host):\(tab.controller.profile.port)")
                 Text(tab.controller.statusText)
                 Text(verbatim: "\(tab.controller.cols)×\(tab.controller.rows)")
+                if tab.paneCount > 1,
+                   let paneIndex = tab.layout.paneIDs.firstIndex(of: tab.selectedPaneID) {
+                    Text(
+                        String(
+                            format: String(localized: "Pane %lld of %lld"),
+                            Int64(paneIndex + 1),
+                            Int64(tab.paneCount)
+                        )
+                    )
+                }
                 if let error = tab.controller.lastError {
                     Text(error).foregroundStyle(.red)
                 }

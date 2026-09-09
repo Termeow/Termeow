@@ -15,11 +15,14 @@
 "Clear Screen" = "Clear Screen";
 "Color Scheme" = "Color Scheme";
 "Clear Search" = "Clear Search";
+"Close Active Pane" = "Close Active Pane";
 "Close Other Tabs" = "Close Other Tabs";
 "Close and Disconnect" = "Close and Disconnect";
+"Close Pane" = "Close Pane";
 "Close Tab" = "Close Tab";
 "Close Tabs to the Right" = "Close Tabs to the Right";
 "Close “%@”?" = "Close “%@”?";
+"Close “%@” Pane?" = "Close “%@” Pane?";
 "Collapse Group" = "Collapse Group";
 "Connect" = "Connect";
 "Connect Once" = "Connect Once";
@@ -55,6 +58,8 @@
 "Find Previous" = "Find Previous";
 "Find…" = "Find…";
 "Font" = "Font";
+"Focus Next Pane" = "Focus Next Pane";
+"Focus Previous Pane" = "Focus Previous Pane";
 "Group" = "Group";
 "Host" = "Host";
 "Host key" = "Host key";
@@ -82,6 +87,8 @@
 "No Sessions" = "No Sessions";
 "No Terminal" = "No Terminal";
 "Password" = "Password";
+"Pane" = "Pane";
+"Pane %lld of %lld" = "Pane %lld of %lld";
 "Passphrase" = "Passphrase";
 "Port" = "Port";
 "Port must be between 1 and 65535." = "Port must be between 1 and 65535.";
@@ -111,6 +118,8 @@
 "Sort By" = "Sort By";
 "Show Sidebar" = "Show Sidebar";
 "Show Status Bar" = "Show Status Bar";
+"Split Pane Horizontally" = "Split Pane Horizontally";
+"Split Pane Vertically" = "Split Pane Vertically";
 "SSH command copied" = "SSH command copied";
 "Startup Command" = "Startup Command";
 "System Monospaced" = "System Monospaced";
@@ -123,7 +132,8 @@
 "Timeout" = "Timeout";
 "Timeout must be at least 1 second." = "Timeout must be at least 1 second.";
 "This removes the saved session and closes its open tabs. This action cannot be undone." = "This removes the saved session and closes its open tabs. This action cannot be undone.";
-"This tab has an active SSH connection. Closing it will disconnect the session." = "This tab has an active SSH connection. Closing it will disconnect the session.";
+"This pane has an active SSH connection. Closing it will disconnect the session." = "This pane has an active SSH connection. Closing it will disconnect the session.";
+"This tab has active SSH connections. Closing it will disconnect all sessions." = "This tab has active SSH connections. Closing it will disconnect all sessions.";
 "Trust and Save" = "Trust and Save";
 "Unknown host key" = "Unknown host key";
 "Username" = "Username";
