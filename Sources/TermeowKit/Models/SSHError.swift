@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SSHError: Error, Equatable, Sendable {
+public enum SSHError: Error, Equatable, Sendable, LocalizedError {
     case connectionFailed
     case timeout
     case authenticationFailed
@@ -11,6 +11,10 @@ public enum SSHError: Error, Equatable, Sendable {
     case connectionClosed
     case invalidPrivateKey
     case missingCredential
+    case invalidJumpRoute
+    indirect case jumpHostFailed(String, SSHError)
+
+    public var errorDescription: String? { userMessage }
 
     public var userMessage: String {
         switch self {
@@ -34,6 +38,10 @@ public enum SSHError: Error, Equatable, Sendable {
             NSLocalizedString("The private key could not be read.", bundle: .module, comment: "SSH error")
         case .missingCredential:
             NSLocalizedString("A password or key is required.", bundle: .module, comment: "SSH error")
+        case .invalidJumpRoute:
+            "The jump-host route is invalid. Check its saved sessions before connecting."
+        case .jumpHostFailed(let name, let reason):
+            "Jump host \(name): \(reason.userMessage)"
         }
     }
 }

@@ -16,19 +16,24 @@ public actor CitadelSFTPService {
     private let secret: String
     private let hostKeyStore: HostKeyStore
     private let prompt: HostKeyPromptHandler
-    private var sshClient: SSHClient?
+    private let jumpHosts: [SSHConnectionHop]
+    private var connection: CitadelConnection?
     private var sftpClient: Citadel.SFTPClient?
+    private var connectTask: Task<CitadelConnection, Error>?
+    private var connectionID: UUID?
 
     public init(
         profile: SessionProfile,
         secret: String,
         hostKeyStore: HostKeyStore,
+        jumpHosts: [SSHConnectionHop] = [],
         prompt: @escaping HostKeyPromptHandler
     ) {
         self.profile = profile
         self.secret = secret
         self.hostKeyStore = hostKeyStore
         self.prompt = prompt
+        self.jumpHosts = jumpHosts
     }
 
     public func connect() async throws -> String {
@@ -37,30 +42,49 @@ public actor CitadelSFTPService {
         }
 
         await disconnect()
-        let ssh = try await CitadelConnectionFactory.connect(
-            profile: profile,
-            secret: secret,
-            hostKeyStore: hostKeyStore,
-            prompt: prompt
-        )
+        let id = UUID()
+        connectionID = id
+        let task = Task {
+            try await CitadelConnectionFactory.connect(
+                profile: profile, secret: secret, hostKeyStore: hostKeyStore,
+                jumpHosts: jumpHosts, prompt: prompt
+            )
+        }
+        connectTask = task
+        defer { if connectionID == id { connectTask = nil } }
+        let ssh = try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: { task.cancel() }
         do {
-            let sftp = try await ssh.openSFTP()
-            sshClient = ssh
-            sftpClient = sftp
-            return try await sftp.getRealPath(atPath: ".")
+            return try await withTaskCancellationHandler {
+                guard connectionID == id else { throw CancellationError() }
+                connection = ssh
+                let sftp = try await ssh.client.openSFTP()
+                let path = try await sftp.getRealPath(atPath: ".")
+                try Task.checkCancellation()
+                guard connectionID == id else { throw CancellationError() }
+                connection = ssh
+                sftpClient = sftp
+                connectTask = nil
+                return path
+            } onCancel: { Task { await ssh.close() } }
         } catch {
-            try? await ssh.close()
+            await ssh.close()
+            if connectionID == id { connection = nil; connectionID = nil }
             throw error
         }
     }
 
     public func disconnect() async {
+        connectionID = nil
+        connectTask?.cancel()
+        connectTask = nil
         let sftp = sftpClient
-        let ssh = sshClient
+        let ssh = connection
         sftpClient = nil
-        sshClient = nil
+        connection = nil
         try? await sftp?.close()
-        try? await ssh?.close()
+        await ssh?.close()
     }
 
     public func listDirectory(at path: String) async throws -> SFTPDirectory {

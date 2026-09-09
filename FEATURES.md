@@ -93,7 +93,7 @@ Update this file in the same PR as the feature.
 - [ ] `mldsa44-ed25519` user keys for post-quantum OpenSSH compatibility
 - [ ] Keyboard-interactive / 2FA prompts
 - [ ] Agent forwarding
-- [ ] ProxyJump (saved session as jump host, including chains)
+- [x] ProxyJump (up to eight saved-session jump hosts, per-hop credentials and host-key checks, route validation, terminal and SFTP support)
 - [ ] ProxyCommand
 - [ ] HTTP / SOCKS5 / system proxy
 - [ ] Local (`-L`), remote (`-R`), and dynamic (`-D`) port forwarding

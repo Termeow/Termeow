@@ -1564,6 +1564,7 @@ struct SessionEditorView: View {
 }
 
 struct SessionEditorForm: View {
+    @Environment(AppModel.self) private var model
     @Binding var state: SessionEditorState
     var onCancel: () -> Void
     var onSave: () -> Void
@@ -1595,6 +1596,27 @@ struct SessionEditorForm: View {
                     }
                 }
             }
+            Section("Jump Host") {
+                Picker("Connect via", selection: $state.profile.jumpHostID) {
+                    Text("Direct Connection").tag(UUID?.none)
+                    ForEach(model.profiles.filter { $0.id != state.profile.id }) { profile in
+                        Text(verbatim: "\(profile.displayName) — \(profile.username)@\(profile.host):\(profile.port)")
+                            .tag(Optional(profile.id))
+                    }
+                    if let id = state.profile.jumpHostID,
+                       !model.profiles.contains(where: { $0.id == id && id != state.profile.id }) {
+                        Text("Unavailable Jump Host").tag(Optional(id))
+                    }
+                }
+                Text("Each jump uses its own saved credentials and host-key verification. The destination is reached from the last jump host.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let routeError {
+                    Text(verbatim: routeError).font(.caption).foregroundStyle(.red)
+                } else if state.profile.jumpHostID != nil, let route = try? resolvedRoute() {
+                    Text(verbatim: route.map(\.displayName).joined(separator: " → "))
+                        .font(.caption).textSelection(.enabled)
+                }
+            }
             Section {
                 TextField("Startup Command", text: $state.profile.startupCommand)
                 TextField("Group", text: $state.profile.groupName)
@@ -1620,9 +1642,20 @@ struct SessionEditorForm: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save", action: onSave)
-                    .disabled(!state.profile.isValidForSaving)
+                    .disabled(!state.profile.isValidForSaving || routeError != nil)
             }
         }
+    }
+
+    private func resolvedRoute() throws -> [SessionProfile] {
+        try SSHConnectionRoute.resolve(destination: state.profile, profiles: model.profiles)
+    }
+
+    private var routeError: String? {
+        // Other fields display their own validation messages while a new session is being entered.
+        guard state.profile.isValidForSaving else { return nil }
+        do { _ = try resolvedRoute(); return nil }
+        catch { return error.localizedDescription }
     }
 
     private func validationMessage(_ message: LocalizedStringKey) -> some View {
