@@ -13,15 +13,18 @@ enum CitadelConnectionFactory {
         jumpHosts: [SSHConnectionHop] = [],
         prompt: @escaping HostKeyPromptHandler
     ) async throws -> CitadelConnection {
-        let lease = SSHRouteLease()
+        let route = jumpHosts + [SSHConnectionHop(profile: profile, secret: secret)]
+        // Agent consent must not block any unrelated SSH connection's event loop.
+        let agentAccess = SSHAgentAccess()
+        let agentGroup = route.contains { $0.profile.authMethod == .agent } ? MultiThreadedEventLoopGroup(numberOfThreads: 1) : nil
+        let lease = SSHRouteLease(agentAccess: agentAccess, agentGroup: agentGroup)
         return try await withTaskCancellationHandler {
             do {
                 try SSHConnectionRoute.validatePreparedRoute(jumpHosts: jumpHosts, destination: profile)
-                let route = jumpHosts + [SSHConnectionHop(profile: profile, secret: secret)]
                 // Resolve all credentials before opening sockets, including key bookmarks.
                 let settings = try route.enumerated().map { index, hop in
                     do {
-                        return try connectionSettings(profile: hop.profile, secret: hop.secret, hostKeyStore: hostKeyStore) { check in
+                        return try connectionSettings(profile: hop.profile, secret: hop.secret, hostKeyStore: hostKeyStore, agentAccess: agentAccess, agentGroup: agentGroup) { check in
                             await lease.requestPrompt(check, using: prompt)
                         }
                     } catch {
@@ -35,12 +38,12 @@ enum CitadelConnectionFactory {
                 for (index, setting) in settings.enumerated() {
                     try Task.checkCancellation()
                     do {
-                        let client = try await connectHop(setting, previous: previous, lease: lease)
+                        let client = try await connectHop(setting, previous: previous, lease: lease, usesAgent: agentGroup != nil)
                         try await lease.add(client)
                         previous = client
                     } catch {
                         if Task.isCancelled { throw CancellationError() }
-                        let failure = await lease.didTimeOut ? SSHError.timeout : mapError(error)
+                        let failure = await lease.didTimeOut ? SSHError.timeout : agentAccess.lastError.map(SSHError.sshAgent) ?? mapError(error)
                         if index < jumpHosts.count {
                             throw SSHError.jumpHostFailed(route[index].profile.displayName, failure)
                         }
@@ -56,18 +59,34 @@ enum CitadelConnectionFactory {
                 throw mapError(error)
             }
         } onCancel: {
+            agentAccess.cancel()
             Task { await lease.close() }
         }
     }
 
-    private static func connectHop(_ settings: SSHClientSettings, previous: SSHClientBox?, lease: SSHRouteLease) async throws -> SSHClientBox {
+    private static func connectHop(_ settings: SSHClientSettings, previous: SSHClientBox?, lease: SSHRouteLease, usesAgent: Bool) async throws -> SSHClientBox {
         try await withThrowingTaskGroup(of: SSHClientBox.self) { group in
             group.addTask {
                 let client: SSHClient
-                if let previous {
+                if usesAgent {
+                    let channel: Channel
+                    if let previous {
+                        channel = try await previous.value.createDirectTCPIPChannel(
+                            using: SSHChannelType.DirectTCPIP(targetHost: settings.host, targetPort: settings.port,
+                                                             originatorAddress: SocketAddress(ipAddress: "127.0.0.1", port: 0))
+                        ) { channel in channel.setOption(ChannelOptions.autoRead, value: false) }
+                    } else {
+                        channel = try await ClientBootstrap(group: settings.group)
+                            .channelOption(ChannelOptions.autoRead, value: false)
+                            .connectTimeout(settings.connectTimeout)
+                            .connect(host: settings.host, port: settings.port).get()
+                        try await lease.setTransport(channel)
+                    }
+                    client = try await authenticateAgentRoute(on: channel, settings: settings)
+                } else if let previous {
                     client = try await previous.value.jump(to: settings)
                 } else {
-                    let channel = try await ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton)
+                    let channel = try await ClientBootstrap(group: settings.group)
                         .channelOption(ChannelOptions.autoRead, value: false)
                         .channelInitializer { channel in
                             channel.pipeline.addHandler(SSHInitialReadGate())
@@ -98,8 +117,34 @@ enum CitadelConnectionFactory {
         }
     }
 
-    private static func connectionSettings(profile: SessionProfile, secret: String, hostKeyStore: HostKeyStore, prompt: @escaping HostKeyPromptHandler) throws -> SSHClientSettings {
-        let auth = AuthBox(try authenticationMethod(profile: profile, secret: secret))
+    private static func authenticateAgentRoute(on channel: Channel, settings: SSHClientSettings) async throws -> SSHClient {
+        do {
+            return try await withTaskExecutorPreference(SSHEventLoopExecutor(channel.eventLoop)) {
+                // This Citadel overload installs SSH without waiting for its fixed ten-second
+                // handshake timer. Our observer honors the session deadline and socket close.
+                // Keep reads paused until the observer is between SSH and Citadel's event sink.
+                let client = try await SSHClient.connect(
+                    on: channel, authenticationMethod: settings.authenticationMethod(),
+                    hostKeyValidator: settings.hostKeyValidator, algorithms: settings.algorithms,
+                    protocolOptions: settings.protocolOptions
+                )
+                let ssh = try channel.pipeline.syncOperations.handler(type: NIOSSHHandler.self)
+                let observer = SSHAgentAuthenticationObserver(eventLoop: channel.eventLoop)
+                try channel.pipeline.syncOperations.addHandler(observer, position: .after(ssh))
+                try await channel.setOption(ChannelOptions.autoRead, value: true).get()
+                // NIOSSH child channels change the autoRead flag without initiating a read.
+                channel.read()
+                try await observer.authenticated.get()
+                return client
+            }
+        } catch {
+            try? await channel.close()
+            throw error
+        }
+    }
+
+    private static func connectionSettings(profile: SessionProfile, secret: String, hostKeyStore: HostKeyStore, agentAccess: SSHAgentAccess, agentGroup: MultiThreadedEventLoopGroup?, prompt: @escaping HostKeyPromptHandler) throws -> SSHClientSettings {
+        let auth = AuthBox(try authenticationMethod(profile: profile, secret: secret, agentAccess: agentAccess))
         let validator = PromptingHostKeyValidator(
             host: profile.host,
             port: profile.port,
@@ -113,11 +158,13 @@ enum CitadelConnectionFactory {
             hostKeyValidator: .custom(validator)
         )
         settings.connectTimeout = .seconds(Int64(max(profile.timeoutSeconds, 1)))
+        if let agentGroup { settings.group = agentGroup }
         return settings
     }
 
     static func mapError(_ error: Error) -> SSHError {
         if let ssh = error as? SSHError { return ssh }
+        if let agent = error as? SSHAgentError { return .sshAgent(agent) }
         if error is SSHRouteError { return .invalidJumpRoute }
         if error is InvalidHostKey { return .unknownHostKey }
         let text = String(describing: error).lowercased()
@@ -127,13 +174,15 @@ enum CitadelConnectionFactory {
         return .connectionFailed
     }
 
-    private static func authenticationMethod(profile: SessionProfile, secret: String) throws -> SSHAuthenticationMethod {
+    private static func authenticationMethod(profile: SessionProfile, secret: String, agentAccess: SSHAgentAccess) throws -> SSHAuthenticationMethod {
         switch profile.authMethod {
         case .password:
             guard !secret.isEmpty else { throw SSHError.missingCredential }
             return .passwordBased(username: profile.username, password: secret)
         case .privateKey:
             return try privateKeyAuth(profile: profile, secret: secret)
+        case .agent:
+            return try SSHAgentAuthentication.method(username: profile.username, configuration: profile.agent, access: agentAccess, timeout: TimeInterval(max(profile.timeoutSeconds, 1)))
         }
     }
 
@@ -196,6 +245,30 @@ private final class SSHEventLoopExecutor: TaskExecutor {
     }
 }
 
+private final class SSHAgentAuthenticationObserver: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = Any
+    private let promise: EventLoopPromise<Void>
+    private var complete = false
+    var authenticated: EventLoopFuture<Void> { promise.futureResult }
+    init(eventLoop: any EventLoop) { promise = eventLoop.makePromise(of: Void.self) }
+
+    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
+        if event is UserAuthSuccessEvent, !complete { complete = true; promise.succeed(()) }
+        context.fireUserInboundEventTriggered(event)
+    }
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        if !complete { complete = true; promise.fail(error) }
+        context.fireErrorCaught(error)
+    }
+    func channelInactive(context: ChannelHandlerContext) {
+        if !complete { complete = true; promise.fail(SSHError.connectionClosed) }
+        context.fireChannelInactive()
+    }
+    func handlerRemoved(context: ChannelHandlerContext) {
+        if !complete { complete = true; promise.fail(SSHError.connectionClosed) }
+    }
+}
+
 /// Do not lose an eager server banner between TCP connect and installation of the SSH pipeline.
 /// The first outbound SSH packet proves its handler is installed; all access is event-loop confined.
 private final class SSHInitialReadGate: ChannelOutboundHandler, @unchecked Sendable {
@@ -221,12 +294,26 @@ struct CitadelConnection: @unchecked Sendable {
 private struct SSHClientBox: @unchecked Sendable { let value: SSHClient }
 
 actor SSHRouteLease {
+    private let agentAccess: SSHAgentAccess
+    private let agentGroup: MultiThreadedEventLoopGroup?
     private var clients: [SSHClientBox] = []
     private var transport: Channel?
     private var closed = false
     private(set) var didTimeOut = false
     private var prompts: [UUID: Task<HostKeyDecision, Never>] = [:]
     private var closeHandlers: [@Sendable () async -> Void] = []
+
+    init(agentAccess: SSHAgentAccess = SSHAgentAccess(), agentGroup: MultiThreadedEventLoopGroup? = nil) {
+        self.agentAccess = agentAccess
+        self.agentGroup = agentGroup
+    }
+
+    deinit {
+        // Client authentication/host-key delegates retain the lease through their final
+        // callbacks. Keep the executor alive until those clients and setup tasks are released,
+        // not merely until their sockets close. Shutdown is asynchronous, including on NIO.
+        agentGroup?.shutdownGracefully { _ in }
+    }
 
     func onClose(_ handler: @escaping @Sendable () async -> Void) async {
         if closed { await handler() } else { closeHandlers.append(handler) }
@@ -260,6 +347,7 @@ actor SSHRouteLease {
     func close() async {
         guard !closed else { return }
         closed = true
+        agentAccess.cancel()
         let handlers = closeHandlers
         closeHandlers = []
         for handler in handlers { await handler() }

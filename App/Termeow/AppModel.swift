@@ -201,7 +201,7 @@ final class AppModel {
 
     func editSelected() {
         guard let profile = selectedProfile else { return }
-        let secret = (try? keychain.secret(id: profile.credentialID)) ?? ""
+        let secret = profile.authMethod == .agent ? "" : (try? keychain.secret(id: profile.credentialID)) ?? ""
         editor = SessionEditorState(profile: profile, secret: secret)
     }
 
@@ -214,7 +214,7 @@ final class AppModel {
         copy.lastUsedAt = nil
         let sourceName = profile.name.isEmpty ? profile.displayName : profile.name
         copy.name = String(format: String(localized: "%@ copy"), sourceName)
-        if let secret = try? keychain.secret(id: profile.credentialID) {
+        if profile.authMethod != .agent, let secret = try? keychain.secret(id: profile.credentialID) {
             try? keychain.saveSecret(secret, id: copy.credentialID)
         }
         profiles.append(copy)
@@ -344,6 +344,10 @@ final class AppModel {
             statusMessage = error.localizedDescription
             return
         }
+        guard !route.contains(where: { $0.authMethod == .agent }) else {
+            statusMessage = "Copy SSH Command is unavailable for agent routes."
+            return
+        }
         let destination = shellArgument("\(profile.username)@\(profile.host)")
         let jumps = route.dropLast().map { hop in
             let host = hop.host.contains(":") ? "[\(hop.host)]" : hop.host
@@ -388,7 +392,7 @@ final class AppModel {
         } else {
             profiles.append(state.profile)
         }
-        if state.secret.isEmpty {
+        if state.profile.authMethod == .agent || state.secret.isEmpty {
             try? keychain.deleteSecret(id: state.profile.credentialID)
         } else {
             try? keychain.saveSecret(state.secret, id: state.profile.credentialID)
@@ -447,6 +451,7 @@ final class AppModel {
 
     func prepareConnectionRoute(for profile: SessionProfile) throws -> [SSHConnectionHop] {
         try SSHConnectionRoute.resolve(destination: profile, profiles: profiles).map { hop in
+            if hop.authMethod == .agent { return SSHConnectionHop(profile: hop, secret: "") }
             do {
                 return SSHConnectionHop(profile: hop, secret: try keychain.secret(id: hop.credentialID) ?? "")
             } catch {

@@ -1589,11 +1589,13 @@ struct SessionEditorForm: View {
                 }
                 if state.profile.authMethod == .password {
                     SecureField("Password", text: $state.secret)
-                } else {
+                } else if state.profile.authMethod == .privateKey {
                     SecureField("Passphrase", text: $state.secret)
                     LabeledContent("Private Key") {
                         Button(keyPath.isEmpty ? keyLabel : keyPath) { chooseKey() }
                     }
+                } else {
+                    SSHAgentIdentityEditor(configuration: $state.profile.agent)
                 }
             }
             Section("Jump Host") {
