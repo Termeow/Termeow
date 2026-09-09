@@ -101,6 +101,23 @@ public struct TabGroupWorkspace: Codable, Equatable, Sendable {
         }
     }
 
+    /// An outer-edge drop splits the entire workspace, not just the nearest leaf.
+    @discardableResult
+    public mutating func splitWorkspace(direction: SplitDirection, moving tabID: UUID) -> UUID? {
+        guard groups.count < 16, groups.contains(where: { $0.tabIDs.contains(tabID) }),
+              groups.reduce(0, { $0 + $1.tabIDs.count }) > 1 else { return nil }
+        let newGroup = TerminalTabGroup()
+        let existingPrefix = direction.before ? "r1" : "r0"
+        ratios = Dictionary(uniqueKeysWithValues: ratios.map { (existingPrefix + $0.key.dropFirst(), $0.value) })
+        layout = .split(axis: direction.axis,
+                        first: direction.before ? .leaf(newGroup.id) : layout,
+                        second: direction.before ? layout : .leaf(newGroup.id))
+        groups.append(newGroup)
+        maximizedGroupID = nil
+        move(tabID, to: newGroup.id)
+        return newGroup.id
+    }
+
     public mutating func removeGroup(_ id: UUID) {
         guard groups.count > 1, let remaining = layout.removing(id) else { return }
         if let path = leafPath(id, in: layout), path.count > 1 {
@@ -140,17 +157,19 @@ public struct TabGroupWorkspace: Codable, Equatable, Sendable {
         maximizedGroupID = nil
     }
 
-    public func frames(in bounds: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)) -> [UUID: CGRect] {
+    public func frames(in bounds: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1), dividerThickness: CGFloat = 0) -> [UUID: CGRect] {
         var result: [UUID: CGRect] = [:]
         func visit(_ node: PaneLayout, _ rect: CGRect, _ path: String) {
             switch node {
             case .leaf(let id): result[id] = rect
             case .split(let axis, let first, let second):
                 let ratio = min(0.9, max(0.1, ratios[path] ?? 0.5))
-                let length = (axis == .vertical ? rect.width : rect.height) * ratio
+                let divider = min(max(0, dividerThickness), axis == .vertical ? rect.width : rect.height)
+                let length = max(0, (axis == .vertical ? rect.width : rect.height) - divider) * ratio
                 let pair = rect.divided(atDistance: length, from: axis == .vertical ? .minXEdge : .minYEdge)
                 visit(first, pair.slice, path + "0")
-                visit(second, pair.remainder, path + "1")
+                let remainder = pair.remainder.divided(atDistance: divider, from: axis == .vertical ? .minXEdge : .minYEdge).remainder
+                visit(second, remainder, path + "1")
             }
         }
         visit(layout, bounds, "r")

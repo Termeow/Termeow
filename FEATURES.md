@@ -146,6 +146,8 @@ Update this file in the same PR as the feature.
 - [x] Confirm `⌘W` while the tab is still connected
 - [x] Recursive tab groups with independent tab strips and empty split targets
 - [x] Move existing sessions between groups without reconnecting using tab context menus
+- [x] Native tab-strip hit testing and before/after insertion markers for adjacent tab reordering
+- [x] Workspace-wide outer-edge split model preserving session identities and existing divider proportions
 - [ ] Complete interactive validation of native cross-group dragging and edge-drop previews
 - [x] Directional group focus, maximize/restore, merge all groups, and confirmed group closure
 - [x] Resizable group dividers with persisted layout, proportions, and per-group selection

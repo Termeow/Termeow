@@ -99,3 +99,40 @@ import Testing
     workspace.move(c, to: workspace.activeGroupID, before: c)
     #expect(workspace.activeGroup?.tabIDs == [a, c, b])
 }
+
+@Test func outerEdgeSplitsWrapExistingGroupsAndPreserveRatios() throws {
+    for direction in SplitDirection.allCases {
+        let a = UUID(), b = UUID(), c = UUID()
+        var workspace = TabGroupWorkspace(tabIDs: [a, b, c])
+        let left = workspace.activeGroupID
+        _ = workspace.split(groupID: left, direction: .right, moving: c)
+        workspace.ratios["r"] = 0.35
+        let oldLayout = workspace.layout
+        let result = workspace.splitWorkspace(direction: direction, moving: b)
+        let added = try #require(result)
+        #expect(workspace.layout == .split(axis: direction.axis, first: direction.before ? .leaf(added) : oldLayout, second: direction.before ? oldLayout : .leaf(added)))
+        #expect(workspace.ratios[direction.before ? "r1" : "r0"] == 0.35)
+        #expect(workspace.activeGroup?.tabIDs == [b])
+        #expect(Set(workspace.groups.flatMap(\.tabIDs)) == Set([a, b, c]))
+    }
+}
+
+@Test func outerEdgeRefusesLastSessionAndInvalidSource() {
+    let a = UUID()
+    var workspace = TabGroupWorkspace(tabIDs: [a])
+    let result = workspace.splitWorkspace(direction: .left, moving: a)
+    #expect(result == nil)
+    let invalid = workspace.splitWorkspace(direction: .left, moving: UUID())
+    #expect(invalid == nil)
+    #expect(workspace.groups.count == 1)
+}
+
+@Test func nativeDropFramesMatchVisibleDividerGaps() throws {
+    var workspace = TabGroupWorkspace()
+    let first = workspace.activeGroupID
+    let result = workspace.split(groupID: first, direction: .right)
+    let second = try #require(result)
+    let frames = workspace.frames(in: CGRect(x: 0, y: 0, width: 1000, height: 600), dividerThickness: 6)
+    #expect(frames[first] == CGRect(x: 0, y: 0, width: 497, height: 600))
+    #expect(frames[second] == CGRect(x: 503, y: 0, width: 497, height: 600))
+}

@@ -650,6 +650,12 @@ final class AppModel {
         activateGroup(neighbor)
     }
 
+    func moveSessionTabToWorkspaceEdge(_ tabID: UUID, direction: SplitDirection) {
+        guard tabs.contains(where: { $0.id == tabID }),
+              let id = tabGroups.splitWorkspace(direction: direction, moving: tabID) else { return }
+        activateGroup(id)
+    }
+
     func mergeAllGroups() {
         tabGroups.mergeAll()
         activateGroup(tabGroups.activeGroupID)
