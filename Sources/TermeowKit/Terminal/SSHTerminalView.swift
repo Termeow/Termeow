@@ -22,8 +22,7 @@ public final class SSHTerminalView: TerminalView {
     public init(
         typography: TerminalTypography = .default,
         colorSchemeID: TerminalColorSchemeID = .dark,
-        scrollback: TerminalScrollback = .default,
-        bellStyle: TerminalBellStyle = .default
+        scrollback: TerminalScrollback = .default
     ) {
         let scrollback = scrollback.clamped()
         super.init(
@@ -34,7 +33,6 @@ public final class SSHTerminalView: TerminalView {
         terminalDelegate = host
         lineSpacing = CGFloat(typography.clamped().lineHeight)
         applyColorScheme(colorSchemeID)
-        applyBellStyle(bellStyle)
     }
 
     public func applyColorScheme(_ id: TerminalColorSchemeID) {
@@ -63,10 +61,6 @@ public final class SSHTerminalView: TerminalView {
         let lines = scrollback.clamped().lines
         guard terminal.options.scrollback != lines else { return }
         changeScrollback(lines)
-    }
-
-    public func applyBellStyle(_ style: TerminalBellStyle) {
-        bellStyle = style.swiftTermStyle
     }
 
     @available(*, unavailable)
@@ -134,17 +128,6 @@ public final class SSHTerminalView: TerminalView {
 
     public func dismissSearch() {
         clearSearch()
-    }
-}
-
-private extension TerminalBellStyle {
-    var swiftTermStyle: BellStyle {
-        switch self {
-        case .none: .none
-        case .sound: .sound
-        case .visual: .visual
-        case .soundAndVisual: .soundAndVisual
-        }
     }
 }
 
