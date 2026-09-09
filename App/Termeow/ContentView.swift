@@ -29,17 +29,14 @@ struct ContentView: View {
                 secondaryButton: .cancel()
             )
         }
-        .alert(item: $model.tabPendingClosure) { request in
-            Alert(
-                title: Text(String(format: String(localized: "Close “%@”?"), request.title)),
-                message: Text("This tab has an active SSH connection. Closing it will disconnect the session."),
-                primaryButton: .destructive(Text("Close and Disconnect")) {
-                    model.confirmCloseTab(request)
-                },
-                secondaryButton: .cancel {
-                    model.cancelCloseTab()
-                }
-            )
+        .alert("Close Tabs?", isPresented: Binding(
+            get: { model.tabPendingClosure != nil },
+            set: { if !$0 { model.cancelCloseTab() } }
+        ), presenting: model.tabPendingClosure) { request in
+            Button("Close and Disconnect", role: .destructive) { model.confirmCloseTab(request) }
+            Button("Cancel", role: .cancel) { model.cancelCloseTab() }
+        } message: { request in
+            Text(String(format: String(localized: "Closing “%@” will disconnect its active SSH sessions."), request.title))
         }
     }
 
@@ -59,7 +56,6 @@ struct ContentView: View {
 
     private var detailColumn: some View {
         VStack(spacing: 0) {
-            TabBarView()
             detailBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if model.statusBarVisible {
@@ -86,12 +82,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailBody: some View {
-        if let tab = model.selectedTab {
-            TerminalContainerView(controller: tab.controller)
-                .id(tab.controller.id)
-        } else {
-            EmptyTerminalView()
-        }
+        GroupWorkspaceView()
     }
 }
 
@@ -104,6 +95,16 @@ struct StatusBarView: View {
                 Text(verbatim: "\(tab.controller.profile.host):\(tab.controller.profile.port)")
                 Text(tab.controller.statusText)
                 Text(verbatim: "\(tab.controller.cols)×\(tab.controller.rows)")
+                if model.tabGroups.groups.count > 1,
+                   let paneIndex = model.tabGroups.layout.paneIDs.firstIndex(of: model.tabGroups.activeGroupID) {
+                    Text(
+                        String(
+                            format: String(localized: "Group %lld of %lld"),
+                            Int64(paneIndex + 1),
+                            Int64(model.tabGroups.groups.count)
+                        )
+                    )
+                }
                 if let error = tab.controller.lastError {
                     Text(error).foregroundStyle(.red)
                 }

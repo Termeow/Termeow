@@ -9,12 +9,15 @@ final class AppModel {
     var profiles: [SessionProfile] = []
     var sessionGroups: [String] = []
     var tabs: [WorkspaceTab] = []
+    var tabGroups = TabGroupWorkspace()
+    var groupPendingClosure: UUID?
     var selectedProfileID: SessionProfile.ID?
     var selectedTabID: WorkspaceTab.ID?
     var searchText = ""
     var editor: SessionEditorState?
     var sessionPendingDeletion: SessionProfile?
     var tabPendingClosure: TabCloseRequest?
+    var panePendingClosure: PaneCloseRequest?
     var hostKeyPrompt: HostKeyPromptState?
     @ObservationIgnored
     private var hostKeyContinuation: CheckedContinuation<HostKeyDecision, Never>?
@@ -56,6 +59,10 @@ final class AppModel {
         selectedTab?.controller.profile ?? selectedProfile
     }
 
+    var selectedPaneCount: Int {
+        tabGroups.groups.count
+    }
+
     var sidebarVisible: Bool {
         get { chromePreferences.sidebarVisible }
         set {
@@ -91,11 +98,7 @@ final class AppModel {
     }
 
     func tabStates(for profileID: SessionProfile.ID) -> [SSHConnectionState] {
-        Array(
-            tabs.lazy
-                .filter { $0.sessionID == profileID }
-                .map(\.controller.state)
-        )
+        tabs.compactMap { $0.connectionState(for: profileID) }
     }
 
     func reload() {
@@ -111,12 +114,34 @@ final class AppModel {
         let snapshot = (try? workspaceStore.load()) ?? WorkspaceSnapshot()
         selectedProfileID = snapshot.selectedProfileID ?? profiles.first?.id
         var restoredTabIDs: [Int: WorkspaceTab.ID] = [:]
-        for (index, sessionID) in snapshot.openSessionIDs.enumerated() {
-            if let profile = profiles.first(where: { $0.id == sessionID }) {
-                restoredTabIDs[index] = openTab(for: profile, connect: false, persistWorkspace: false)
+        if let tabSnapshots = snapshot.tabs, !tabSnapshots.isEmpty {
+            for (index, tabSnapshot) in tabSnapshots.enumerated() {
+                if let tab = restoredTab(from: tabSnapshot) {
+                    tabs.append(tab)
+                    restoredTabIDs[index] = tab.id
+                }
+            }
+        } else {
+            for (index, sessionID) in snapshot.openSessionIDs.enumerated() {
+                if let profile = profiles.first(where: { $0.id == sessionID }) {
+                    restoredTabIDs[index] = openTab(for: profile, connect: false, persistWorkspace: false)
+                }
             }
         }
         selectedTabID = snapshot.selectedTabIndex.flatMap { restoredTabIDs[$0] } ?? tabs.first?.id
+        // Upgrade the first split-pane preview to one session per tab.
+        let oldSelected = selectedTab?.controller.id
+        tabs = tabs.flatMap { tab in
+            tab.allControllers.map { WorkspaceTab(controller: $0) }
+        }
+        if let savedIDs = snapshot.tabIDs, savedIDs.count == tabs.count {
+            tabs = zip(savedIDs, tabs).map { WorkspaceTab(id: $0.0, controller: $0.1.controller) }
+        }
+        selectedTabID = tabs.first(where: { $0.controller.id == oldSelected })?.id ?? tabs.first?.id
+        tabGroups = snapshot.tabGroups ?? TabGroupWorkspace(tabIDs: tabs.map(\.id))
+        if snapshot.tabGroups != nil { selectedTabID = tabGroups.activeGroup?.selectedTabID }
+        tabGroups.reconcile(tabIDs: tabs.map(\.id), selectedTabID: selectedTabID)
+        selectedTabID = tabGroups.activeGroup?.selectedTabID
     }
 
     func setTypography(_ typography: TerminalTypography) {
@@ -137,10 +162,11 @@ final class AppModel {
         guard value != self.scrollback else { return }
         self.scrollback = value
         value.save()
-        tabs.forEach { $0.controller.applyScrollback(value) }
+        tabs.flatMap(\.allControllers).forEach { $0.applyScrollback(value) }
     }
 
     func persist() {
+        tabGroups.reconcile(tabIDs: tabs.map(\.id), selectedTabID: selectedTabID)
         do {
             try sessionStore.saveLibrary(SessionLibrary(profiles: profiles, groups: sessionGroupNames))
             try workspaceStore.save(
@@ -149,7 +175,10 @@ final class AppModel {
                     selectedProfileID: selectedProfileID,
                     selectedTabIndex: selectedTabID.flatMap { selectedID in
                         tabs.firstIndex { $0.id == selectedID }
-                    }
+                    },
+                    tabs: tabs.map(\.snapshot),
+                    tabGroups: tabGroups,
+                    tabIDs: tabs.map(\.id)
                 )
             )
         } catch {
@@ -199,15 +228,20 @@ final class AppModel {
     func confirmDelete(_ profile: SessionProfile) {
         guard profiles.contains(where: { $0.id == profile.id }) else { return }
         try? keychain.deleteSecret(id: profile.credentialID)
-        let removedTabIDs = Set(tabs.lazy.filter { $0.sessionID == profile.id }.map(\.id))
-        tabs.lazy.filter { $0.sessionID == profile.id }.forEach { $0.controller.disconnect() }
-        tabs.removeAll { $0.sessionID == profile.id }
+        let removedTabIDs = Set(tabs.lazy.filter { $0.contains(profileID: profile.id) }.map(\.id))
+        let affectedGroups = tabGroups.groups.filter { !$0.tabIDs.allSatisfy { !removedTabIDs.contains($0) } }.map(\.id)
+        tabs.lazy.filter { $0.contains(profileID: profile.id) }.forEach { $0.disconnectAll() }
+        tabs.removeAll { $0.contains(profileID: profile.id) }
+        tabGroups.reconcile(tabIDs: tabs.map(\.id), selectedTabID: nil)
+        for id in affectedGroups where tabGroups.groups.first(where: { $0.id == id })?.tabIDs.isEmpty == true {
+            tabGroups.removeGroup(id)
+        }
         profiles.removeAll { $0.id == profile.id }
         if selectedProfileID == profile.id {
             selectedProfileID = profiles.first?.id
         }
         if let selectedTabID, removedTabIDs.contains(selectedTabID) {
-            self.selectedTabID = tabs.first?.id
+            self.selectedTabID = tabGroups.activeGroup?.selectedTabID
         }
         sessionPendingDeletion = nil
         persist()
@@ -401,10 +435,10 @@ final class AppModel {
         let currentProfile = markSessionUsed(profile.id) ?? profile
         if let index = tabs.firstIndex(where: { $0.id == selectedTabID }),
            tabs[index].controller.canReuseForConnection {
+            let paneID = tabs[index].selectedPaneID
             tabs[index].controller.disconnect()
-            let controller = ConnectionController(profile: currentProfile, model: self)
-            tabs[index].sessionID = currentProfile.id
-            tabs[index].controller = controller
+            let controller = ConnectionController(id: paneID, profile: currentProfile, model: self)
+            tabs[index].replaceController(controller, for: paneID)
             persist()
             controller.connect()
             return
@@ -418,7 +452,7 @@ final class AppModel {
         connect: Bool,
         persistWorkspace: Bool = true
     ) -> WorkspaceTab.ID {
-        let tab = WorkspaceTab(sessionID: profile.id, controller: ConnectionController(profile: profile, model: self))
+        let tab = WorkspaceTab(controller: ConnectionController(profile: profile, model: self))
         tabs.append(tab)
         selectedTabID = tab.id
         if persistWorkspace {
@@ -437,8 +471,9 @@ final class AppModel {
     }
 
     func selectTab(at index: Int) {
-        guard tabs.indices.contains(index) else { return }
-        selectTab(tabs[index].id)
+        guard let ids = tabGroups.activeGroup?.tabIDs, ids.indices.contains(index) else { return }
+        selectTab(ids[index])
+        focusActiveTerminal()
     }
 
     func reorderTab(_ id: WorkspaceTab.ID, over targetID: WorkspaceTab.ID) {
@@ -472,7 +507,7 @@ final class AppModel {
 
     func requestCloseTab(_ id: WorkspaceTab.ID) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        guard tab.controller.state.requiresCloseConfirmation else {
+        guard tab.requiresCloseConfirmation else {
             closeTab(id)
             return
         }
@@ -481,7 +516,7 @@ final class AppModel {
 
     func confirmCloseTab(_ request: TabCloseRequest) {
         tabPendingClosure = nil
-        closeTab(request.id)
+        for id in [request.id] + request.extraIDs { closeTab(id) }
     }
 
     func cancelCloseTab() {
@@ -491,22 +526,24 @@ final class AppModel {
     private func closeTab(_ id: WorkspaceTab.ID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         let wasSelected = selectedTabID == id
-        tabs[index].controller.disconnect()
+        tabs[index].disconnectAll()
         tabs.remove(at: index)
+        tabGroups.closeTab(id)
         if wasSelected {
-            selectedTabID = tabs.indices.contains(index) ? tabs[index].id : tabs.last?.id
+            selectedTabID = tabGroups.activeGroup?.selectedTabID
         }
         persist()
+        focusActiveTerminal()
     }
 
     func reconnectTab(_ id: WorkspaceTab.ID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let paneID = tabs[index].selectedPaneID
         let storedProfile = tabs[index].controller.profile
         let profile = markSessionUsed(storedProfile.id) ?? storedProfile
         tabs[index].controller.disconnect()
-        let controller = ConnectionController(profile: profile, model: self)
-        tabs[index].sessionID = profile.id
-        tabs[index].controller = controller
+        let controller = ConnectionController(id: paneID, profile: profile, model: self)
+        tabs[index].replaceController(controller, for: paneID)
         selectedProfileID = profile.id
         selectedTabID = id
         persist()
@@ -519,39 +556,213 @@ final class AppModel {
 
     func duplicateTab(_ id: WorkspaceTab.ID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let storedProfile = tabs[index].controller.profile
-        let profile = markSessionUsed(storedProfile.id) ?? storedProfile
-        let controller = ConnectionController(profile: profile, model: self)
-        let duplicate = WorkspaceTab(sessionID: profile.id, controller: controller)
+        let source = tabs[index]
+        var paneIDMap: [UUID: UUID] = [:]
+        var controllers: [UUID: ConnectionController] = [:]
+        for sourcePaneID in source.layout.paneIDs {
+            guard let sourceController = source.controller(for: sourcePaneID) else { continue }
+            let paneID = UUID()
+            paneIDMap[sourcePaneID] = paneID
+            let currentProfile = profiles.first(where: { $0.id == sourceController.profile.id })
+                ?? sourceController.profile
+            controllers[paneID] = ConnectionController(id: paneID, profile: currentProfile, model: self)
+        }
+        guard controllers.count == source.paneCount,
+              let selectedPaneID = paneIDMap[source.selectedPaneID]
+        else { return }
+        let layout = source.layout.mappingPaneIDs { paneIDMap[$0] ?? $0 }
+        let duplicate = WorkspaceTab(
+            layout: layout,
+            controllers: controllers,
+            selectedPaneID: selectedPaneID
+        )
         tabs.insert(duplicate, at: index + 1)
-        selectedProfileID = profile.id
+        selectedProfileID = duplicate.controller.profile.id
         selectedTabID = duplicate.id
         persist()
-        controller.connect()
+        duplicate.allControllers.forEach { $0.connect() }
     }
 
     func closeOtherTabs(keeping id: WorkspaceTab.ID) {
-        guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        tabs.lazy.filter { $0.id != id }.forEach { $0.controller.disconnect() }
-        tabs = [tab]
-        selectedTabID = id
-        persist()
+        guard let group = tabGroups.groups.first(where: { $0.tabIDs.contains(id) }) else { return }
+        requestCloseTabs(group.tabIDs.filter { $0 != id })
     }
 
     func closeTabsToRight(of id: WorkspaceTab.ID) {
-        guard let index = tabs.firstIndex(where: { $0.id == id }), index + 1 < tabs.count else { return }
-        tabs[(index + 1)...].forEach { $0.controller.disconnect() }
-        let removedSelectedTab = tabs[(index + 1)...].contains { $0.id == selectedTabID }
-        tabs.removeSubrange((index + 1)...)
-        if removedSelectedTab {
-            selectedTabID = id
+        guard let group = tabGroups.groups.first(where: { $0.tabIDs.contains(id) }),
+              let index = group.tabIDs.firstIndex(of: id) else { return }
+        requestCloseTabs(Array(group.tabIDs.dropFirst(index + 1)))
+    }
+
+    func hasTabsToRight(of id: WorkspaceTab.ID) -> Bool {
+        guard let group = tabGroups.groups.first(where: { $0.tabIDs.contains(id) }),
+              let index = group.tabIDs.firstIndex(of: id) else { return false }
+        return index + 1 < group.tabIDs.count
+    }
+
+    private func requestCloseTabs(_ ids: [UUID]) {
+        guard let first = ids.first else { return }
+        if tabs.contains(where: { ids.contains($0.id) && $0.requiresCloseConfirmation }) {
+            tabPendingClosure = TabCloseRequest(id: first, title: String(localized: "Selected Tabs"), extraIDs: Array(ids.dropFirst()))
+        } else { ids.forEach { closeTab($0) } }
+    }
+
+    func splitSelectedPane(_ axis: PaneSplitAxis) {
+        createGroup(axis == .vertical ? .right : .down)
+    }
+
+    func activateGroup(_ id: UUID, focus: Bool = true) {
+        tabGroups.activate(id)
+        selectedTabID = tabGroups.activeGroup?.selectedTabID
+        if let profile = selectedTab?.controller.profile { selectedProfileID = profile.id }
+        persist()
+        if focus { focusActiveTerminal() }
+    }
+
+    func focusActiveTerminal() {
+        DispatchQueue.main.async { [weak self] in self?.selectedTab?.controller.focusTerminal() }
+    }
+
+    func createGroup(_ direction: SplitDirection, moving tabID: UUID? = nil) {
+        guard let id = tabGroups.split(groupID: tabGroups.activeGroupID, direction: direction, moving: tabID) else { return }
+        activateGroup(id)
+    }
+
+    func moveSessionTab(_ tabID: UUID, to groupID: UUID, direction: SplitDirection? = nil, before targetID: UUID? = nil) {
+        guard tabs.contains(where: { $0.id == tabID }) else { return }
+        if let direction {
+            // Dropping the only tab on its own edge would just create an empty region.
+            if let group = tabGroups.groups.first(where: { $0.id == groupID }), group.tabIDs == [tabID] { return }
+            guard let newID = tabGroups.split(groupID: groupID, direction: direction, moving: tabID) else { return }
+            activateGroup(newID)
+        } else {
+            tabGroups.move(tabID, to: groupID, before: targetID)
+            activateGroup(groupID)
+        }
+    }
+
+    func focusGroup(_ direction: SplitDirection) {
+        guard let neighbor = tabGroups.neighbor(direction) else { return }
+        activateGroup(neighbor)
+    }
+
+    func moveSessionTabToWorkspaceEdge(_ tabID: UUID, direction: SplitDirection) {
+        guard tabs.contains(where: { $0.id == tabID }),
+              let id = tabGroups.splitWorkspace(direction: direction, moving: tabID) else { return }
+        activateGroup(id)
+    }
+
+    func mergeAllGroups() {
+        tabGroups.mergeAll()
+        activateGroup(tabGroups.activeGroupID)
+    }
+
+    func toggleGroupZoom() {
+        tabGroups.maximizedGroupID = tabGroups.maximizedGroupID == nil ? tabGroups.activeGroupID : nil
+        persist()
+        focusActiveTerminal()
+    }
+
+    func equalizeGroups() {
+        tabGroups.ratios = [:]
+        persist()
+    }
+
+    func setGroupRatio(_ ratio: Double, path: String, save: Bool) {
+        tabGroups.ratios[path] = min(0.9, max(0.1, ratio))
+        if save { persist() }
+    }
+
+    func requestCloseGroup(_ id: UUID) {
+        guard let group = tabGroups.groups.first(where: { $0.id == id }) else { return }
+        if tabs.contains(where: { group.tabIDs.contains($0.id) && $0.requiresCloseConfirmation }) {
+            groupPendingClosure = id
+        } else { closeGroup(id) }
+    }
+
+    func closeGroup(_ id: UUID) {
+        guard let group = tabGroups.groups.first(where: { $0.id == id }) else { return }
+        tabs.filter { group.tabIDs.contains($0.id) }.forEach { $0.disconnectAll() }
+        tabs.removeAll { group.tabIDs.contains($0.id) }
+        if tabGroups.groups.count == 1 { tabGroups = TabGroupWorkspace() }
+        else { tabGroups.removeGroup(id) }
+        groupPendingClosure = nil
+        activateGroup(tabGroups.activeGroupID)
+    }
+
+    func splitPane(in tabID: WorkspaceTab.ID, axis: PaneSplitAxis) {
+        selectTab(tabID)
+        createGroup(axis == .vertical ? .right : .down, moving: tabID)
+    }
+
+    func focusPane(_ paneID: UUID) {
+        guard let tabIndex = tabs.firstIndex(where: { $0.layout.contains(paneID) }) else { return }
+        guard tabs[tabIndex].selectedPaneID != paneID || selectedTabID != tabs[tabIndex].id else { return }
+        selectedTab?.controller.hostedTerminal().dismissSearch()
+        tabs[tabIndex].selectedPaneID = paneID
+        selectedTabID = tabs[tabIndex].id
+        selectedProfileID = tabs[tabIndex].controller.profile.id
+        resetFindSummary()
+        if findBarVisible, !findQuery.isEmpty {
+            performFind(forward: true)
         }
         persist()
     }
 
-    func hasTabsToRight(of id: WorkspaceTab.ID) -> Bool {
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
-        return index + 1 < tabs.count
+    func selectRelativePane(_ delta: Int) {
+        guard delta != 0,
+              let tabIndex = tabs.firstIndex(where: { $0.id == selectedTabID })
+        else { return }
+        let paneIDs = tabs[tabIndex].layout.paneIDs
+        guard paneIDs.count > 1,
+              let currentIndex = paneIDs.firstIndex(of: tabs[tabIndex].selectedPaneID)
+        else { return }
+        let nextIndex = (currentIndex + delta + paneIDs.count) % paneIDs.count
+        let nextPaneID = paneIDs[nextIndex]
+        focusPane(nextPaneID)
+        DispatchQueue.main.async { [weak self] in
+            self?.selectedTab?.controller.focusTerminal()
+        }
+    }
+
+    func requestCloseSelectedPane() {
+        guard let tabID = selectedTabID else { return }
+        requestClosePane(in: tabID)
+    }
+
+    func requestClosePane(in tabID: WorkspaceTab.ID) {
+        guard let tab = tabs.first(where: { $0.id == tabID }) else { return }
+        guard tab.paneCount > 1 else {
+            requestCloseTab(tabID)
+            return
+        }
+        let controller = tab.controller
+        guard controller.state.requiresCloseConfirmation else {
+            closePane(tabID: tabID, paneID: tab.selectedPaneID)
+            return
+        }
+        panePendingClosure = PaneCloseRequest(
+            tabID: tabID,
+            paneID: tab.selectedPaneID,
+            title: controller.title
+        )
+    }
+
+    func confirmClosePane(_ request: PaneCloseRequest) {
+        panePendingClosure = nil
+        closePane(tabID: request.tabID, paneID: request.paneID)
+    }
+
+    func cancelClosePane() {
+        panePendingClosure = nil
+    }
+
+    func controller(in tabID: WorkspaceTab.ID, paneID: UUID) -> ConnectionController? {
+        tabs.first(where: { $0.id == tabID })?.controller(for: paneID)
+    }
+
+    func isSelectedPane(tabID: WorkspaceTab.ID, paneID: UUID) -> Bool {
+        selectedTabID == tabID && selectedTab?.selectedPaneID == paneID
     }
 
     func disconnectSelectedTab() {
@@ -591,10 +802,36 @@ final class AppModel {
     }
 
     func selectRelativeTab(_ delta: Int) {
-        guard let id = selectedTabID, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let next = (index + delta + tabs.count) % max(tabs.count, 1)
-        selectedTabID = tabs[next].id
+        guard let ids = tabGroups.activeGroup?.tabIDs, !ids.isEmpty,
+              let id = selectedTabID, let index = ids.firstIndex(of: id) else { return }
+        selectTab(ids[(index + delta + ids.count) % ids.count])
+        focusActiveTerminal()
+    }
+
+    private func closePane(tabID: WorkspaceTab.ID, paneID: UUID) {
+        guard let tabIndex = tabs.firstIndex(where: { $0.id == tabID }),
+              tabs[tabIndex].paneCount > 1,
+              let controller = tabs[tabIndex].controller(for: paneID),
+              let layout = tabs[tabIndex].layout.removing(paneID)
+        else { return }
+
+        let paneIDs = tabs[tabIndex].layout.paneIDs
+        let removedIndex = paneIDs.firstIndex(of: paneID) ?? 0
+        let remainingPaneIDs = layout.paneIDs
+        let fallbackIndex = min(removedIndex, remainingPaneIDs.count - 1)
+        let selectedPaneID = remainingPaneIDs[fallbackIndex]
+
+        controller.disconnect()
+        tabs[tabIndex].controllers.removeValue(forKey: paneID)
+        tabs[tabIndex].layout = layout
+        tabs[tabIndex].selectedPaneID = selectedPaneID
+        selectedTabID = tabID
+        selectedProfileID = tabs[tabIndex].controller.profile.id
+        resetFindSummary()
         persist()
+        DispatchQueue.main.async { [weak self] in
+            self?.selectedTab?.controller.focusTerminal()
+        }
     }
 
     private func updateProfile(_ id: SessionProfile.ID, mutation: (inout SessionProfile) -> Void) {
@@ -633,9 +870,35 @@ final class AppModel {
     }
 
     private func synchronizeOpenTabs(with profile: SessionProfile) {
-        for index in tabs.indices where tabs[index].sessionID == profile.id {
-            tabs[index].controller.profile = profile
+        for index in tabs.indices {
+            for paneID in tabs[index].layout.paneIDs
+            where tabs[index].controller(for: paneID)?.profile.id == profile.id {
+                tabs[index].controller(for: paneID)?.profile = profile
+            }
         }
+    }
+
+    private func restoredTab(from snapshot: WorkspaceTabSnapshot) -> WorkspaceTab? {
+        var controllers: [UUID: ConnectionController] = [:]
+        for pane in snapshot.panes {
+            guard controllers[pane.id] == nil,
+                  let profile = profiles.first(where: { $0.id == pane.sessionID })
+            else { continue }
+            controllers[pane.id] = ConnectionController(id: pane.id, profile: profile, model: self)
+        }
+
+        let availablePaneIDs = Set(controllers.keys)
+        guard let layout = snapshot.layout.retaining(availablePaneIDs),
+              let fallbackPaneID = layout.paneIDs.first
+        else { return nil }
+        let selectedPaneID = layout.contains(snapshot.selectedPaneID)
+            ? snapshot.selectedPaneID
+            : fallbackPaneID
+        return WorkspaceTab(
+            layout: layout,
+            controllers: controllers,
+            selectedPaneID: selectedPaneID
+        )
     }
 
     @discardableResult
@@ -679,13 +942,12 @@ final class AppModel {
 @MainActor
 @Observable
 final class ConnectionController {
-    let id = UUID()
+    let id: UUID
     var profile: SessionProfile
     var state: SSHConnectionState = .disconnected
     var cols = 80
     var rows = 24
     var lastError: String?
-    var layout: PaneLayout = .leaf
     var remoteTitle: String?
 
     private weak var model: AppModel?
@@ -698,7 +960,8 @@ final class ConnectionController {
     @ObservationIgnored
     private var hostedView: SSHTerminalView?
 
-    init(profile: SessionProfile, model: AppModel) {
+    init(id: UUID = UUID(), profile: SessionProfile, model: AppModel) {
+        self.id = id
         self.profile = profile
         self.model = model
     }
@@ -730,6 +993,15 @@ final class ConnectionController {
 
     func applyScrollback(_ scrollback: TerminalScrollback) {
         hostedView?.applyScrollback(scrollback)
+    }
+
+    func focusTerminal() {
+        guard let hostedView, let window = hostedView.window else { return }
+        window.makeFirstResponder(hostedView)
+    }
+
+    func noteFocus() {
+        model?.focusPane(id)
     }
 
     var title: String { remoteTitle ?? profile.displayName }
@@ -879,14 +1151,119 @@ final class SSHOutbound: @unchecked Sendable {
     }
 }
 
+@MainActor
 struct WorkspaceTab: Identifiable {
-    let id = UUID()
-    var sessionID: UUID
-    var controller: ConnectionController
+    let id: UUID
+    var layout: PaneLayout
+    var controllers: [UUID: ConnectionController]
+    var selectedPaneID: UUID
+
+    init(
+        id: UUID = UUID(),
+        layout: PaneLayout,
+        controllers: [UUID: ConnectionController],
+        selectedPaneID: UUID
+    ) {
+        precondition(layout.contains(selectedPaneID))
+        precondition(Set(layout.paneIDs).isSubset(of: Set(controllers.keys)))
+        self.id = id
+        self.layout = layout
+        self.controllers = controllers
+        self.selectedPaneID = selectedPaneID
+    }
+
+    init(id: UUID = UUID(), controller: ConnectionController) {
+        self.init(
+            id: id,
+            layout: .leaf(controller.id),
+            controllers: [controller.id: controller],
+            selectedPaneID: controller.id
+        )
+    }
+
+    var controller: ConnectionController {
+        guard let controller = controllers[selectedPaneID] else {
+            preconditionFailure("A workspace tab must have a controller for its selected pane")
+        }
+        return controller
+    }
+
+    var allControllers: [ConnectionController] {
+        layout.paneIDs.compactMap { controllers[$0] }
+    }
+
+    var paneCount: Int { layout.paneIDs.count }
+    var sessionID: UUID { controller.profile.id }
+    var state: SSHConnectionState {
+        aggregateState(allControllers.map(\.state)) ?? .disconnected
+    }
+    var requiresCloseConfirmation: Bool {
+        allControllers.contains { $0.state.requiresCloseConfirmation }
+    }
+
+    var snapshot: WorkspaceTabSnapshot {
+        WorkspaceTabSnapshot(
+            layout: layout,
+            panes: layout.paneIDs.compactMap { paneID in
+                controllers[paneID].map {
+                    WorkspacePaneSnapshot(id: paneID, sessionID: $0.profile.id)
+                }
+            },
+            selectedPaneID: selectedPaneID
+        )
+    }
+
+    func controller(for paneID: UUID) -> ConnectionController? {
+        controllers[paneID]
+    }
+
+    func contains(profileID: UUID) -> Bool {
+        allControllers.contains { $0.profile.id == profileID }
+    }
+
+    func connectionState(for profileID: UUID) -> SSHConnectionState? {
+        aggregateState(
+            allControllers.lazy
+                .filter { $0.profile.id == profileID }
+                .map(\.state)
+        )
+    }
+
+    func disconnectAll() {
+        allControllers.forEach { $0.disconnect() }
+    }
+
+    mutating func replaceController(_ controller: ConnectionController, for paneID: UUID) {
+        precondition(layout.contains(paneID))
+        precondition(controller.id == paneID)
+        controllers[paneID] = controller
+    }
+
+    private func aggregateState<S: Sequence>(_ states: S) -> SSHConnectionState? where S.Element == SSHConnectionState {
+        let states = Array(states)
+        guard !states.isEmpty else { return nil }
+        if states.contains(.connected) { return .connected }
+        if states.contains(.connecting) { return .connecting }
+        if let failed = states.first(where: {
+            if case .failed = $0 { return true }
+            return false
+        }) {
+            return failed
+        }
+        return .disconnected
+    }
 }
 
 struct TabCloseRequest: Identifiable {
     let id: WorkspaceTab.ID
+    let title: String
+    var extraIDs: [UUID] = []
+}
+
+struct PaneCloseRequest: Identifiable {
+    var id: UUID { paneID }
+    let tabID: WorkspaceTab.ID
+    let paneID: UUID
     let title: String
 }
 

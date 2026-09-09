@@ -1,638 +1,422 @@
 import AppKit
 import SwiftUI
 import TermeowKit
+import UniformTypeIdentifiers
 
-struct TabBarView: View {
+let sessionTabDragType = UTType(exportedAs: "cn.termeow.session-tab")
+private let tabPasteboardType = NSPasteboard.PasteboardType(sessionTabDragType.identifier)
+
+@MainActor private func draggedSessionID(_ sender: NSDraggingInfo) -> UUID? {
+    guard sender.draggingSource is SessionTabDocumentView,
+          let data = sender.draggingPasteboard.data(forType: tabPasteboardType),
+          let text = String(data: data, encoding: .utf8), text.hasPrefix("termeow-tab:") else { return nil }
+    return UUID(uuidString: String(text.dropFirst(12)))
+}
+
+struct WorkspaceDropHost: NSViewRepresentable {
+    let model: AppModel
+    func makeNSView(context: Context) -> WorkspaceDropHostView { WorkspaceDropHostView(model: model) }
+    func updateNSView(_ view: WorkspaceDropHostView, context: Context) {}
+}
+
+private struct HostedGroupLayout: View {
     @Environment(AppModel.self) private var model
-
     var body: some View {
-        NativeTabBar(items: items, selectedID: model.selectedTabID, actions: actions)
-            .frame(height: 36)
-            .background(.ultraThinMaterial)
-    }
-
-    private var items: [TabBarItem] {
-        model.tabs.map { tab in
-            TabBarItem(
-                id: tab.id,
-                title: tab.controller.title,
-                state: tab.controller.state,
-                canReconnect: tab.controller.canReconnect,
-                canDisconnect: tab.controller.canDisconnect,
-                canMoveLeft: model.canMoveTab(tab.id, by: -1),
-                canMoveRight: model.canMoveTab(tab.id, by: 1),
-                hasTabsToRight: model.hasTabsToRight(of: tab.id),
-                tabCount: model.tabs.count
-            )
-        }
-    }
-
-    private var actions: TabBarActions {
-        TabBarActions(
-            onSelect: { model.selectTab($0) },
-            onClose: { model.requestCloseTab($0) },
-            onReorder: { model.reorderTab($0, over: $1) },
-            onConnect: { model.reconnectTab($0) },
-            onDisconnect: { model.disconnectTab($0) },
-            onDuplicate: { model.duplicateTab($0) },
-            onOpenSFTP: { id in
-                guard let tab = model.tabs.first(where: { $0.id == id }) else { return }
-                model.openSFTP(tab.controller.profile)
-            },
-            onMove: { model.moveTab($0, by: $1) },
-            onCloseOthers: { model.closeOtherTabs(keeping: $0) },
-            onCloseToRight: { model.closeTabsToRight(of: $0) }
-        )
+        GroupLayoutView(layout: model.tabGroups.maximizedGroupID.map(PaneLayout.leaf) ?? model.tabGroups.layout, path: "r")
     }
 }
 
-private struct TabBarItem: Equatable {
-    var id: UUID
-    var title: String
-    var state: SSHConnectionState
-    var canReconnect: Bool
-    var canDisconnect: Bool
-    var canMoveLeft: Bool
-    var canMoveRight: Bool
-    var hasTabsToRight: Bool
-    var tabCount: Int
-}
+/// A native ancestor receives terminal-area drops that child tab strips do not handle.
+final class WorkspaceDropHostView: NSView {
+    private let model: AppModel
+    private let content: NSHostingView<AnyView>
+    private let preview = DropPreviewView()
+    override var isFlipped: Bool { true }
 
-private struct TabBarActions {
-    var onSelect: (UUID) -> Void
-    var onClose: (UUID) -> Void
-    var onReorder: (UUID, UUID) -> Void
-    var onConnect: (UUID) -> Void
-    var onDisconnect: (UUID) -> Void
-    var onDuplicate: (UUID) -> Void
-    var onOpenSFTP: (UUID) -> Void
-    var onMove: (UUID, Int) -> Void
-    var onCloseOthers: (UUID) -> Void
-    var onCloseToRight: (UUID) -> Void
-}
-
-private struct NativeTabBar: NSViewRepresentable {
-    var items: [TabBarItem]
-    var selectedID: UUID?
-    var actions: TabBarActions
-
-    func makeNSView(context: Context) -> TabBarHostView {
-        TabBarHostView()
+    init(model: AppModel) {
+        self.model = model
+        content = NSHostingView(rootView: AnyView(HostedGroupLayout().environment(model)))
+        content.sizingOptions = []
+        super.init(frame: .zero)
+        addSubview(content)
+        addSubview(preview)
+        preview.isHidden = true
+        registerForDraggedTypes([tabPasteboardType])
     }
-
-    func updateNSView(_ nsView: TabBarHostView, context: Context) {
-        nsView.actions = actions
-        nsView.reload(items: items, selectedID: selectedID)
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: TabBarHostView, context: Context) -> CGSize {
-        CGSize(width: proposal.width ?? 200, height: 36)
-    }
-}
-
-private final class TabBarHostView: NSView {
-    var actions = TabBarActions(
-        onSelect: { _ in },
-        onClose: { _ in },
-        onReorder: { _, _ in },
-        onConnect: { _ in },
-        onDisconnect: { _ in },
-        onDuplicate: { _ in },
-        onOpenSFTP: { _ in },
-        onMove: { _, _ in },
-        onCloseOthers: { _ in },
-        onCloseToRight: { _ in }
-    )
-
-    private let scrollView = TabBarScrollView()
-    private let documentView = FlippedView()
-    private let slotPlaceholder: PassthroughView = {
-        let view = PassthroughView()
-        view.wantsLayer = true
-        view.layer?.cornerRadius = 11
-        view.layer?.borderWidth = 1.5
-        view.isHidden = true
-        return view
-    }()
-    private let insertionCaret: PassthroughView = {
-        let view = PassthroughView()
-        view.wantsLayer = true
-        view.layer?.cornerRadius = 2
-        view.isHidden = true
-        return view
-    }()
-    private var chips: [UUID: TabChipNSView] = [:]
-    private var items: [TabBarItem] = []
-    private var selectedID: UUID?
-    private var draggingID: UUID?
-    private var dropTargetID: UUID?
-    private var laidDropTargetID: UUID?
-    private var mouseMonitor: Any?
-    private var trackingID: UUID?
-    private var dragStart: NSPoint?
-    private var grabOffsetX: CGFloat = 0
-    private var dragPointerX: CGFloat = 0
-    private var isShowingContextMenu = false
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        scrollView.drawsBackground = false
-        scrollView.hasHorizontalScroller = false
-        scrollView.hasVerticalScroller = false
-        scrollView.horizontalScrollElasticity = .allowed
-        scrollView.verticalScrollElasticity = .none
-        scrollView.documentView = documentView
-        documentView.addSubview(slotPlaceholder)
-        documentView.addSubview(insertionCaret)
-        addSubview(scrollView)
-    }
-
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+    required init?(coder: NSCoder) { fatalError("Created in code") }
+    override func layout() { super.layout(); content.frame = bounds }
+
+    func outerEdge(at windowPoint: CGPoint) -> SplitDirection? {
+        let point = convert(windowPoint, from: nil)
+        guard bounds.contains(point) else { return nil }
+        let distances: [(SplitDirection, CGFloat)] = [(.left, point.x), (.right, bounds.width - point.x), (.up, point.y), (.down, bounds.height - point.y)]
+        return distances.min { $0.1 < $1.1 }.flatMap { $0.1 <= 16 ? $0.0 : nil }
     }
 
-    override var isOpaque: Bool { false }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if let mouseMonitor {
-            NSEvent.removeMonitor(mouseMonitor)
-            self.mouseMonitor = nil
+    private func target(_ sender: NSDraggingInfo) -> (group: UUID?, direction: SplitDirection?, rect: CGRect)? {
+        guard let source = draggedSessionID(sender), model.tabs.contains(where: { $0.id == source }) else { return nil }
+        if let edge = outerEdge(at: sender.draggingLocation) {
+            guard model.tabs.count > 1, model.tabGroups.groups.count < 16 else { return nil }
+            return (nil, edge, half(bounds, direction: edge))
         }
-        guard window != nil else { return }
-        // ponytail: local monitor runs before NSHostingView dispatch, which can drop clicks
-        mouseMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown]
-        ) { [weak self] event in
-            self?.routeMouse(event) ?? event
+        let point = convert(sender.draggingLocation, from: nil)
+        let frames = model.tabGroups.maximizedGroupID.map { [$0: bounds] } ?? model.tabGroups.frames(in: bounds, dividerThickness: 6)
+        guard let (id, frame) = frames.first(where: { $0.value.contains(point) }) else { return nil }
+        let distances: [(SplitDirection, CGFloat)] = [(.left, (point.x - frame.minX) / frame.width), (.right, (frame.maxX - point.x) / frame.width), (.up, (point.y - frame.minY) / frame.height), (.down, (frame.maxY - point.y) / frame.height)]
+        let direction = distances.min { $0.1 < $1.1 }.flatMap { $0.1 < 0.2 ? $0.0 : nil }
+        if direction != nil {
+            guard model.tabGroups.groups.count < 16,
+                  model.tabGroups.groups.first(where: { $0.id == id })?.tabIDs != [source] else { return nil }
         }
+        return (id, direction, direction.map { half(frame, direction: $0) } ?? frame)
     }
 
-    override func layout() {
-        super.layout()
-        scrollView.frame = bounds
-        layoutChips()
-    }
-
-    private func routeMouse(_ event: NSEvent) -> NSEvent? {
-        if isShowingContextMenu { return event }
-        guard event.window == window else { return event }
-        switch event.type {
-        case .rightMouseDown:
-            return handleSecondaryDown(event) ? nil : event
-        case .leftMouseDown:
-            if event.modifierFlags.contains(.control) {
-                return handleSecondaryDown(event) ? nil : event
-            }
-            return handlePrimaryDown(event) ? nil : event
-        case .leftMouseDragged, .leftMouseUp:
-            guard trackingID != nil else { return event }
-            handlePrimaryDragOrUp(event)
-            return nil
-        default:
-            return event
+    private func half(_ frame: CGRect, direction: SplitDirection) -> CGRect {
+        switch direction {
+        case .left: CGRect(x: frame.minX, y: frame.minY, width: frame.width / 2, height: frame.height)
+        case .right: CGRect(x: frame.midX, y: frame.minY, width: frame.width / 2, height: frame.height)
+        case .up: CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height / 2)
+        case .down: CGRect(x: frame.minX, y: frame.midY, width: frame.width, height: frame.height / 2)
         }
     }
-
-    private func handleSecondaryDown(_ event: NSEvent) -> Bool {
-        let local = convert(event.locationInWindow, from: nil)
-        guard bounds.contains(local) else { return false }
-        guard let chip = chip(atWindowPoint: event.locationInWindow) else { return true }
-        isShowingContextMenu = true
-        // ponytail: pop on the next turn so the monitor is not nested inside the menu
-        DispatchQueue.main.async { [weak self, weak chip] in
-            chip?.popContextMenu(event)
-            self?.isShowingContextMenu = false
-        }
+    func clearPreview() { preview.isHidden = true }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard let target = target(sender) else { clearPreview(); return [] }
+        preview.frame = target.rect.insetBy(dx: 2, dy: 2)
+        preview.isHidden = false
+        return .move
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) { clearPreview() }
+    override func draggingEnded(_ sender: NSDraggingInfo) { clearPreview() }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { target(sender) != nil }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        defer { clearPreview() }
+        guard let id = draggedSessionID(sender), let target = target(sender) else { return false }
+        if let group = target.group { model.moveSessionTab(id, to: group, direction: target.direction) }
+        else if let direction = target.direction { model.moveSessionTabToWorkspaceEdge(id, direction: direction) }
         return true
     }
+}
 
-    private func chip(atWindowPoint point: NSPoint) -> TabChipNSView? {
-        let documentPoint = documentView.convert(point, from: nil)
-        for item in items.reversed() {
-            if let chip = chips[item.id], chip.frame.contains(documentPoint) {
-                return chip
-            }
+private final class DropPreviewView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.controlAccentColor.withAlphaComponent(0.2).setFill()
+        bounds.fill()
+        NSColor.controlAccentColor.setStroke()
+        let outline = NSBezierPath(rect: bounds.insetBy(dx: 1, dy: 1))
+        outline.lineWidth = 2
+        outline.stroke()
+    }
+}
+
+struct GroupTabStrip: NSViewRepresentable {
+    let model: AppModel
+    let groupID: UUID
+
+    func makeNSView(context: Context) -> GroupTabStripView { GroupTabStripView() }
+    func updateNSView(_ view: GroupTabStripView, context: Context) {
+        let group = model.tabGroups.groups.first { $0.id == groupID }
+        view.model = model
+        view.groupID = groupID
+        view.reload(tabs: (group?.tabIDs ?? []).compactMap { id in model.tabs.first { $0.id == id } }, selected: group?.selectedTabID)
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: GroupTabStripView, context: Context) -> CGSize {
+        CGSize(width: proposal.width ?? 200, height: 34)
+    }
+}
+
+/// Drawing, hit testing and insertion share a single AppKit document coordinate space.
+final class GroupTabStripView: NSScrollView {
+    weak var model: AppModel?
+    var groupID = UUID()
+    private let strip = SessionTabDocumentView()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        drawsBackground = false
+        hasHorizontalScroller = false
+        hasVerticalScroller = false
+        horizontalScrollElasticity = .allowed
+        verticalScrollElasticity = .none
+        documentView = strip
+        strip.owner = self
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("Created in code") }
+
+    func reload(tabs: [WorkspaceTab], selected: UUID?) {
+        let oldSelection = strip.selectedID
+        strip.tabs = tabs
+        strip.selectedID = selected
+        strip.rebuildFrames(minimumWidth: contentSize.width)
+        if oldSelection != selected, let selected, let rect = strip.tabFrames[selected] {
+            strip.scrollToVisible(rect)
+        }
+    }
+    override func layout() {
+        super.layout()
+        strip.rebuildFrames(minimumWidth: contentSize.width)
+    }
+    override func accessibilityChildren() -> [Any]? { [strip] }
+}
+
+private final class SessionTabDocumentView: NSView, NSDraggingSource {
+    weak var owner: GroupTabStripView?
+    var tabs: [WorkspaceTab] = []
+    var selectedID: UUID?
+    var tabFrames: [UUID: CGRect] = [:]
+    private var down: (id: UUID, point: CGPoint, close: Bool)?
+    private var caret: CGFloat?
+    private var dragInProgress = false
+    private var closeButtons: [UUID: SessionTabCloseButton] = [:]
+    private weak var dragWorkspace: WorkspaceDropHostView?
+    private var workspace: WorkspaceDropHostView? {
+        var view = superview
+        while let candidate = view {
+            if let host = candidate as? WorkspaceDropHostView { return host }
+            view = candidate.superview
         }
         return nil
     }
-
-    private func handlePrimaryDown(_ event: NSEvent) -> Bool {
-        let local = convert(event.locationInWindow, from: nil)
-        guard bounds.contains(local) else { return false }
-
-        let documentPoint = documentView.convert(event.locationInWindow, from: nil)
-        for item in items.reversed() {
-            guard let chip = chips[item.id], chip.frame.contains(documentPoint) else { continue }
-            if chip.hitClose(windowPoint: event.locationInWindow) {
-                actions.onClose(item.id)
-                return true
-            }
-            trackingID = item.id
-            dragStart = event.locationInWindow
-            actions.onSelect(item.id)
-            return true
-        }
-        return true
-    }
-
-    private func handlePrimaryDragOrUp(_ event: NSEvent) {
-        guard let trackingID, let dragStart else { return }
-        if event.type == .leftMouseUp {
-            if draggingID != nil { finishDrag() }
-            self.trackingID = nil
-            self.dragStart = nil
-            return
-        }
-
-        let distance = hypot(event.locationInWindow.x - dragStart.x, event.locationInWindow.y - dragStart.y)
-        let documentX = documentView.convert(event.locationInWindow, from: nil).x
-        if draggingID == nil {
-            guard distance >= 10 else { return }
-            beginDrag(of: trackingID, documentX: documentX)
-        } else {
-            updateDrag(of: trackingID, documentX: documentX)
-        }
-    }
-
-    func reload(items: [TabBarItem], selectedID: UUID?) {
-        self.items = items
-        self.selectedID = selectedID
-        let ids = Set(items.map(\.id))
-        for (id, chip) in chips where !ids.contains(id) {
-            chip.removeFromSuperview()
-            chips.removeValue(forKey: id)
-        }
-        for item in items {
-            let chip = chips[item.id] ?? {
-                let created = TabChipNSView()
-                created.host = self
-                created.wantsLayer = true
-                created.layer?.masksToBounds = false
-                documentView.addSubview(created, positioned: .below, relativeTo: insertionCaret)
-                chips[item.id] = created
-                return created
-            }()
-            chip.item = item
-            chip.selected = item.id == selectedID
-            chip.dragging = item.id == draggingID
-            chip.needsDisplay = true
-        }
-        layoutChips()
-    }
-
-    func beginDrag(of id: UUID, documentX: CGFloat) {
-        draggingID = id
-        dragPointerX = documentX
-        if let chip = chips[id] {
-            grabOffsetX = documentX - chip.frame.minX
-            documentView.addSubview(chip, positioned: .above, relativeTo: insertionCaret)
-        }
-        laidDropTargetID = nil
-        updateDropTarget(documentX: documentX)
-        reload(items: items, selectedID: selectedID)
-    }
-
-    func updateDrag(of id: UUID, documentX: CGFloat) {
-        draggingID = id
-        dragPointerX = documentX
-        updateDropTarget(documentX: documentX)
-        reload(items: items, selectedID: selectedID)
-    }
-
-    func finishDrag() {
-        let sourceID = draggingID
-        let targetID = dropTargetID
-        draggingID = nil
-        dropTargetID = nil
-        laidDropTargetID = nil
-        grabOffsetX = 0
-        insertionCaret.isHidden = true
-        slotPlaceholder.isHidden = true
-        reload(items: items, selectedID: selectedID)
-        guard let sourceID, let targetID else { return }
-        actions.onReorder(sourceID, targetID)
-    }
-
-    private func updateDropTarget(documentX: CGFloat) {
-        guard let sourceID = draggingID,
-              let sourceIndex = items.firstIndex(where: { $0.id == sourceID }) else {
-            dropTargetID = nil
-            return
-        }
-        let frames = restingFrames()
-        guard let sourceFrame = frames[sourceID] else {
-            dropTargetID = nil
-            return
-        }
-        dropTargetID = TabReorder.targetID(
-            sourceIndex: sourceIndex,
-            sourceFrame: sourceFrame,
-            pointerX: documentX,
-            orderedIDs: items.map(\.id),
-            frames: frames
-        )
-    }
-
-    private func restingFrames() -> [UUID: CGRect] {
-        var x: CGFloat = 10
-        let chipHeight: CGFloat = 22
-        let y = max((bounds.height - chipHeight) / 2, 0)
-        var frames: [UUID: CGRect] = [:]
-        for item in items {
-            guard let chip = chips[item.id] else { continue }
-            let width = chip.preferredWidth
-            frames[item.id] = CGRect(x: x, y: y, width: width, height: chipHeight)
-            x += width + 6
-        }
-        return frames
-    }
-
-    private func layoutChips() {
-        let chipHeight: CGFloat = 22
-        let y = max((bounds.height - chipHeight) / 2, 0)
-        let ids = items.map(\.id)
-        let order = draggingID.map { TabReorder.previewIDs(ids, moving: $0, over: dropTargetID) } ?? ids
-        let animateNeighbors = draggingID != nil && dropTargetID != laidDropTargetID
-        laidDropTargetID = dropTargetID
-
-        var x: CGFloat = 10
-        var slot: CGRect?
-        var neighborFrames: [(TabChipNSView, CGRect)] = []
-        for id in order {
-            guard let chip = chips[id] else { continue }
-            let width = chip.preferredWidth
-            let rest = CGRect(x: x, y: y, width: width, height: chipHeight)
-            if id == draggingID {
-                slot = rest
-                chip.layer?.zPosition = 10
-                chip.frame = CGRect(x: dragPointerX - grabOffsetX, y: y - 3, width: width, height: chipHeight)
-            } else {
-                chip.layer?.zPosition = 0
-                neighborFrames.append((chip, rest))
-            }
-            x += width + 6
-        }
-
-        let applyNeighborsAndMarkers = { (animated: Bool) in
-            for (chip, frame) in neighborFrames {
-                if animated {
-                    chip.animator().frame = frame
-                } else {
-                    chip.frame = frame
-                }
-            }
-            self.updateDragMarkers(slot: slot, animated: animated)
-        }
-        if animateNeighbors {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.2
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                applyNeighborsAndMarkers(true)
-            }
-        } else {
-            applyNeighborsAndMarkers(false)
-        }
-
-        let width = max(x + 4, bounds.width)
-        documentView.frame = CGRect(x: 0, y: 0, width: width, height: max(bounds.height, 36))
-    }
-
-    private func updateDragMarkers(slot: CGRect?, animated: Bool) {
-        slotPlaceholder.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.75).cgColor
-        slotPlaceholder.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
-        insertionCaret.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-        insertionCaret.layer?.zPosition = 9
-        guard let slot, draggingID != nil else {
-            slotPlaceholder.isHidden = true
-            insertionCaret.isHidden = true
-            return
-        }
-
-        slotPlaceholder.isHidden = false
-        if animated {
-            slotPlaceholder.animator().frame = slot
-        } else {
-            slotPlaceholder.frame = slot
-        }
-
-        let caret = CGRect(x: slot.minX - 2, y: slot.midY - 10, width: 4, height: 20)
-        let showCaret = dropTargetID != nil
-        if showCaret, insertionCaret.isHidden {
-            insertionCaret.frame = caret
-            insertionCaret.isHidden = false
-        } else if showCaret {
-            insertionCaret.isHidden = false
-            if animated {
-                insertionCaret.animator().frame = caret
-            } else {
-                insertionCaret.frame = caret
-            }
-        } else {
-            insertionCaret.isHidden = true
-        }
-    }
-}
-
-private final class TabBarScrollView: NSScrollView {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-}
-
-private final class PassthroughView: NSView {
-    override var isOpaque: Bool { false }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-private final class FlippedView: NSView {
     override var isFlipped: Bool { true }
-    override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-}
 
-private final class TabChipNSView: NSView {
-    weak var host: TabBarHostView?
-    var item = TabBarItem(
-        id: UUID(),
-        title: "",
-        state: .disconnected,
-        canReconnect: true,
-        canDisconnect: false,
-        canMoveLeft: false,
-        canMoveRight: false,
-        hasTabsToRight: false,
-        tabCount: 1
-    )
-    var selected = false
-    var dragging = false {
-        didSet { applyDragChrome() }
-    }
-
-    private let closeButton = TabCloseNSButton()
-    private let titleFont = NSFont.systemFont(ofSize: 13)
-
-    override var isFlipped: Bool { true }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        closeButton.isBordered = false
-        closeButton.imageScaling = .scaleNone
-        closeButton.contentTintColor = .secondaryLabelColor
-        closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 9, weight: .regular))
-        closeButton.target = self
-        closeButton.action = #selector(closeTab)
-        closeButton.setAccessibilityLabel(String(localized: "Close Tab"))
-        closeButton.toolTip = String(localized: "Close Tab")
-        addSubview(closeButton)
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        registerForDraggedTypes([tabPasteboardType])
+        setAccessibilityRole(.tabGroup)
         setAccessibilityElement(true)
-        setAccessibilityRole(.button)
     }
-
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+    required init?(coder: NSCoder) { fatalError("Created in code") }
+
+    func rebuildFrames(minimumWidth: CGFloat) {
+        let validIDs = Set(tabs.map(\.id))
+        for id in Array(closeButtons.keys) where !validIDs.contains(id) {
+            closeButtons.removeValue(forKey: id)?.removeFromSuperview()
+        }
+        var x: CGFloat = 4
+        tabFrames = [:]
+        for tab in tabs {
+            let textWidth = (tab.controller.title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
+            let width = min(220, max(90, textWidth + 48))
+            tabFrames[tab.id] = CGRect(x: x, y: 4, width: width, height: 26)
+            let button = closeButtons[tab.id] ?? SessionTabCloseButton()
+            button.tabID = tab.id
+            button.target = self
+            button.action = #selector(closeTabButton(_:))
+            button.frame = closeRect(tabFrames[tab.id]!)
+            button.toolTip = String(localized: "Close Tab")
+            button.setAccessibilityLabel(String(localized: "Close Tab") + " — " + tab.controller.title)
+            if button.superview !== self { addSubview(button) }
+            closeButtons[tab.id] = button
+            x += width + 4
+        }
+        setFrameSize(CGSize(width: max(minimumWidth, x), height: 34))
+        needsDisplay = true
+    }
+    private func closeRect(_ frame: CGRect) -> CGRect {
+        CGRect(x: frame.maxX - 23, y: frame.minY + 3, width: 20, height: 20)
     }
 
-    var preferredWidth: CGFloat {
-        let titleWidth = ceil((item.title as NSString).size(withAttributes: [.font: titleFont]).width)
-        return min(240, max(72, 10 + 7 + 6 + titleWidth + 6 + 22 + 4))
+    @objc private func closeTabButton(_ sender: SessionTabCloseButton) {
+        down = nil
+        owner?.model?.requestCloseTab(sender.tabID)
     }
 
-    override var isOpaque: Bool { false }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point) else { return nil }
-        let closePoint = convert(point, to: closeButton)
-        if closeButton.bounds.contains(closePoint) { return closeButton }
-        return self
+    override func accessibilityChildren() -> [Any]? {
+        guard let window else { return [] }
+        return tabs.enumerated().flatMap { index, tab -> [Any] in
+            guard let rect = tabFrames[tab.id], rect.intersects(visibleRect) else { return [] }
+            let select = TabAccessibilityAction { [weak self] in
+                self?.owner?.model?.selectTab(tab.id)
+                self?.owner?.model?.focusActiveTerminal()
+            }
+            select.setAccessibilityParent(self)
+            select.setAccessibilityRole(.radioButton)
+            select.setAccessibilityLabel("\(tab.controller.title), Tab \(index + 1)")
+            select.setAccessibilityIdentifier("session-tab-\(tab.id)")
+            select.setAccessibilityValue(tab.id == selectedID)
+            select.setAccessibilityFrame(window.convertToScreen(convert(rect.intersection(visibleRect), to: nil)))
+            return [select] + (closeButtons[tab.id].map { [$0] } ?? [])
+        }
     }
-
-    override func layout() {
-        super.layout()
-        closeButton.frame = CGRect(x: bounds.width - 26, y: (bounds.height - 22) / 2, width: 22, height: 22)
-    }
-
     override func draw(_ dirtyRect: NSRect) {
-        setAccessibilityLabel(item.title)
-        setAccessibilitySelected(selected)
-
-        let capsule = NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2)
-        if dragging {
-            NSColor.controlAccentColor.withAlphaComponent(0.28).setFill()
-            capsule.fill()
-            NSColor.controlAccentColor.setStroke()
-            capsule.lineWidth = 2
-            capsule.stroke()
-        } else if selected {
-            NSColor.quaternaryLabelColor.withAlphaComponent(0.35).setFill()
-            capsule.fill()
+        for tab in tabs {
+            guard let rect = tabFrames[tab.id] else { continue }
+            if tab.id == selectedID {
+                NSColor.controlAccentColor.withAlphaComponent(0.2).setFill()
+                NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5).fill()
+            }
+            let color: NSColor = tab.state == .connected ? .systemGreen : tab.state == .connecting ? .systemYellow : .secondaryLabelColor
+            color.setFill()
+            NSBezierPath(ovalIn: CGRect(x: rect.minX + 8, y: rect.midY - 3, width: 6, height: 6)).fill()
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byTruncatingTail
+            (tab.controller.title as NSString).draw(in: CGRect(x: rect.minX + 20, y: rect.minY + 5, width: rect.width - 46, height: 18), withAttributes: [
+                .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph
+            ])
         }
-
-        let dot = NSRect(x: 10, y: (bounds.height - 7) / 2, width: 7, height: 7)
-        statusColor.setFill()
-        NSBezierPath(ovalIn: dot).fill()
-
-        let titleHeight = titleFont.boundingRectForFont.height
-        let titleRect = NSRect(
-            x: 23,
-            y: (bounds.height - titleHeight) / 2,
-            width: max(closeButton.frame.minX - 29, 0),
-            height: titleHeight
-        )
-        let style = NSMutableParagraphStyle()
-        style.lineBreakMode = .byTruncatingTail
-        (item.title as NSString).draw(
-            in: titleRect,
-            withAttributes: [
-                .font: titleFont,
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: style,
-            ]
-        )
+        if let caret {
+            NSColor.controlAccentColor.setFill()
+            CGRect(x: caret - 1, y: 3, width: 2, height: 28).fill()
+        }
     }
-
-    private func applyDragChrome() {
-        wantsLayer = true
-        layer?.masksToBounds = false
-        if dragging {
-            layer?.shadowColor = NSColor.black.cgColor
-            layer?.shadowOpacity = 0.45
-            layer?.shadowRadius = 8
-            layer?.shadowOffset = CGSize(width: 0, height: 3)
+    override func mouseDown(with event: NSEvent) {
+        guard !event.modifierFlags.contains(.control) else { super.mouseDown(with: event); return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard let id = TabStripHitTest.tab(at: point, order: tabs.map(\.id), frames: tabFrames), let rect = tabFrames[id] else { return }
+        down = (id, point, closeRect(rect).contains(point))
+    }
+    override func mouseUp(with event: NSEvent) {
+        defer { down = nil }
+        guard let down, !dragInProgress, let rect = tabFrames[down.id] else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard rect.contains(point) else { return }
+        if down.close {
+            if closeRect(rect).contains(point) { owner?.model?.requestCloseTab(down.id) }
         } else {
-            layer?.shadowOpacity = 0
-            layer?.shadowRadius = 0
+            owner?.model?.selectTab(down.id)
+            owner?.model?.focusActiveTerminal()
         }
     }
-
-    func hitClose(windowPoint: NSPoint) -> Bool {
-        closeButton.frame.contains(convert(windowPoint, from: nil))
+    override func mouseDragged(with event: NSEvent) {
+        guard let down, !down.close, !dragInProgress, let rect = tabFrames[down.id] else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        guard hypot(point.x - down.point.x, point.y - down.point.y) >= 5 else { return }
+        let pasteboard = NSPasteboardItem()
+        pasteboard.setData(Data(("termeow-tab:" + down.id.uuidString).utf8), forType: tabPasteboardType)
+        let item = NSDraggingItem(pasteboardWriter: pasteboard)
+        let preview = NSImage(size: rect.size)
+        if let bitmap = bitmapImageRepForCachingDisplay(in: rect) {
+            cacheDisplay(in: rect, to: bitmap)
+            preview.addRepresentation(bitmap)
+        }
+        let draggingFrame = rect.offsetBy(dx: point.x - down.point.x, dy: point.y - down.point.y)
+        item.setDraggingFrame(draggingFrame, contents: preview)
+        dragInProgress = true
+        dragWorkspace = workspace
+        beginDraggingSession(with: [item], event: event, source: self)
     }
-
-    func popContextMenu(_ event: NSEvent) {
-        NSMenu.popUpContextMenu(contextMenu(), with: event, for: self)
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .withinApplication ? .move : []
     }
-
-    override func accessibilityPerformPress() -> Bool {
-        host?.actions.onSelect(item.id)
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        down = nil
+        dragInProgress = false
+        caret = nil
+        needsDisplay = true
+        dragWorkspace?.clearPreview()
+        dragWorkspace = nil
+    }
+    private func sourceID(_ sender: NSDraggingInfo) -> UUID? {
+        draggedSessionID(sender)
+    }
+    private func insertion(_ sender: NSDraggingInfo, source: UUID) -> (before: UUID?, x: CGFloat) {
+        let point = convert(sender.draggingLocation, from: nil)
+        let target = TabStripHitTest.insertion(at: point.x, order: tabs.map(\.id), frames: tabFrames, excluding: source)
+        return (target.before, target.markerX)
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if let workspace, workspace.outerEdge(at: sender.draggingLocation) != nil {
+            caret = nil
+            needsDisplay = true
+            return workspace.draggingUpdated(sender)
+        }
+        workspace?.clearPreview()
+        guard let source = sourceID(sender) else { return [] }
+        if let event = NSApp.currentEvent { autoscroll(with: event) }
+        caret = insertion(sender, source: source).x
+        needsDisplay = true
+        return .move
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) { caret = nil; needsDisplay = true; workspace?.clearPreview() }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { sourceID(sender) != nil }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        defer { caret = nil; needsDisplay = true }
+        if let workspace, workspace.outerEdge(at: sender.draggingLocation) != nil { return workspace.performDragOperation(sender) }
+        guard let source = sourceID(sender), let owner, let model = owner.model else { return false }
+        model.moveSessionTab(source, to: owner.groupID, before: insertion(sender, source: source).before)
         return true
     }
-
-    private var statusColor: NSColor {
-        switch item.state {
-        case .connected: .systemGreen
-        case .connecting: .systemYellow
-        case .failed: .systemRed
-        case .disconnected: .secondaryLabelColor
-        }
-    }
-
-    private func contextMenu() -> NSMenu {
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        guard let tab = tabs.first(where: { tabFrames[$0.id]?.contains(point) == true }), let owner, let model = owner.model else { return nil }
         let menu = NSMenu()
-        let connectTitle = item.state == .disconnected
-            ? String(localized: "Connect")
-            : String(localized: "Reconnect")
-        menu.addItem(menuItem(connectTitle, #selector(connectTab), enabled: item.canReconnect))
-        menu.addItem(menuItem(String(localized: "Disconnect"), #selector(disconnectTab), enabled: item.canDisconnect))
-        menu.addItem(menuItem(String(localized: "Duplicate Tab"), #selector(duplicateTab)))
-        menu.addItem(menuItem(String(localized: "Open SFTP"), #selector(openSFTP)))
+        menu.autoenablesItems = false
+        func add(_ title: String, enabled: Bool = true, action: @escaping () -> Void) {
+            let item = TabMenuCommand(title: title, handler: action)
+            item.isEnabled = enabled
+            menu.addItem(item)
+        }
+        add(String(localized: "Connect"), enabled: tab.controller.canReconnect) { model.reconnectTab(tab.id) }
+        add(String(localized: "Disconnect"), enabled: tab.controller.canDisconnect) { model.disconnectTab(tab.id) }
+        add(String(localized: "Duplicate Connection")) { model.selectTab(tab.id); model.duplicateTab(tab.id) }
+        add(String(localized: "Open SFTP")) { model.openSFTP(tab.controller.profile) }
         menu.addItem(.separator())
-        menu.addItem(menuItem(String(localized: "Move Tab Left"), #selector(moveTabLeft), enabled: item.canMoveLeft))
-        menu.addItem(menuItem(String(localized: "Move Tab Right"), #selector(moveTabRight), enabled: item.canMoveRight))
+        let newGroup = NSMenuItem(title: String(localized: "Move to New Tab Group"), action: nil, keyEquivalent: "")
+        let directions = NSMenu()
+        directions.autoenablesItems = false
+        for (direction, title) in [(SplitDirection.left, String(localized: "Left")), (.right, String(localized: "Right")), (.up, String(localized: "Above")), (.down, String(localized: "Below"))] {
+            let item = TabMenuCommand(title: title) { model.moveSessionTab(tab.id, to: owner.groupID, direction: direction) }
+            item.isEnabled = tabs.count > 1 && model.tabGroups.groups.count < 16
+            directions.addItem(item)
+        }
+        newGroup.submenu = directions
+        menu.addItem(newGroup)
+        let move = NSMenuItem(title: String(localized: "Move to Tab Group"), action: nil, keyEquivalent: "")
+        let targets = NSMenu()
+        targets.autoenablesItems = false
+        for (index, id) in model.tabGroups.layout.paneIDs.enumerated() {
+            let item = TabMenuCommand(title: "Group \(index + 1)") { model.moveSessionTab(tab.id, to: id) }
+            item.isEnabled = id != owner.groupID
+            targets.addItem(item)
+        }
+        move.submenu = targets
+        menu.addItem(move)
         menu.addItem(.separator())
-        menu.addItem(menuItem(String(localized: "Close Tab"), #selector(closeTab)))
-        menu.addItem(menuItem(String(localized: "Close Other Tabs"), #selector(closeOthers), enabled: item.tabCount > 1))
-        menu.addItem(menuItem(String(localized: "Close Tabs to the Right"), #selector(closeToRight), enabled: item.hasTabsToRight))
+        add(String(localized: "Close Tab")) { model.requestCloseTab(tab.id) }
+        add(String(localized: "Close Other Tabs"), enabled: tabs.count > 1) { model.closeOtherTabs(keeping: tab.id) }
+        add(String(localized: "Close Tabs to the Right"), enabled: model.hasTabsToRight(of: tab.id)) { model.closeTabsToRight(of: tab.id) }
         return menu
     }
-
-    private func menuItem(_ title: String, _ action: Selector, enabled: Bool = true) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self
-        item.isEnabled = enabled
-        return item
-    }
-
-    @objc private func closeTab() { host?.actions.onClose(item.id) }
-    @objc private func connectTab() { host?.actions.onConnect(item.id) }
-    @objc private func disconnectTab() { host?.actions.onDisconnect(item.id) }
-    @objc private func duplicateTab() { host?.actions.onDuplicate(item.id) }
-    @objc private func openSFTP() { host?.actions.onOpenSFTP(item.id) }
-    @objc private func moveTabLeft() { host?.actions.onMove(item.id, -1) }
-    @objc private func moveTabRight() { host?.actions.onMove(item.id, 1) }
-    @objc private func closeOthers() { host?.actions.onCloseOthers(item.id) }
-    @objc private func closeToRight() { host?.actions.onCloseToRight(item.id) }
 }
 
-private final class TabCloseNSButton: NSButton {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(point) ? self : nil
+private final class SessionTabCloseButton: NSButton {
+    var tabID = UUID()
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        title = ""
+        image = NSImage(systemSymbolName: "xmark", accessibilityDescription: String(localized: "Close Tab"))
+        imagePosition = .imageOnly
+        imageScaling = .scaleProportionallyDown
+        symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 9, weight: .regular)
+        isBordered = false
+        setButtonType(.momentaryChange)
     }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("Created in code") }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+private final class TabAccessibilityAction: NSAccessibilityElement {
+    private let action: () -> Void
+    init(action: @escaping () -> Void) { self.action = action; super.init() }
+    override func accessibilityPerformPress() -> Bool { action(); return true }
+}
+
+private final class TabMenuCommand: NSMenuItem {
+    private let handler: () -> Void
+    init(title: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(invoke), keyEquivalent: "")
+        target = self
+    }
+    @available(*, unavailable)
+    required init(coder: NSCoder) { fatalError("Created in code") }
+    @objc private func invoke() { handler() }
 }
