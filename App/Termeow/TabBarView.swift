@@ -357,6 +357,7 @@ private final class SessionTabDocumentView: NSView, NSDraggingSource {
         add(String(localized: "Disconnect"), enabled: tab.controller.canDisconnect) { model.disconnectTab(tab.id) }
         add(String(localized: "Duplicate Connection")) { model.selectTab(tab.id); model.duplicateTab(tab.id) }
         add(String(localized: "Open SFTP")) { model.openSFTP(tab.controller.profile) }
+        add("Port Forwarding…") { model.forwardingController = tab.controller }
         menu.addItem(.separator())
         let newGroup = NSMenuItem(title: String(localized: "Move to New Tab Group"), action: nil, keyEquivalent: "")
         let directions = NSMenu()

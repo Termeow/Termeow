@@ -1622,6 +1622,9 @@ struct SessionEditorForm: View {
                 TextField("Group", text: $state.profile.groupName)
                 Toggle("Favorite", isOn: $state.profile.isFavorite)
             }
+            Section("Port Forwarding") {
+                PortForwardRuleEditor(rules: $state.profile.portForwards)
+            }
             Section("Advanced") {
                 TextField("TERM", text: $state.profile.term)
                 TextField("Timeout", value: $state.profile.timeoutSeconds, format: .number)
@@ -1642,7 +1645,7 @@ struct SessionEditorForm: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save", action: onSave)
-                    .disabled(!state.profile.isValidForSaving || routeError != nil)
+                    .disabled(!state.profile.isValidForSaving || routeError != nil || PortForwardRule.validationError(in: state.profile.portForwards) != nil)
             }
         }
     }
@@ -1687,5 +1690,54 @@ struct SessionEditorForm: View {
         } catch {
             AppLog.storage.error("Could not create key bookmark")
         }
+    }
+}
+
+struct PortForwardRuleEditor: View {
+    @Binding var rules: [PortForwardRule]
+
+    var body: some View {
+        Text("Enabled rules start with this terminal connection. SFTP windows and jump hosts do not start these rules.")
+            .font(.caption).foregroundStyle(.secondary)
+        ForEach($rules) { $rule in
+            VStack(alignment: .leading, spacing: 10) {
+                Picker("Type", selection: $rule.kind) {
+                    ForEach(PortForwardKind.allCases) { Text(verbatim: $0.title).tag($0) }
+                }
+                TextField("Listen address", text: $rule.bindHost)
+                TextField("Listen port", value: $rule.bindPort, format: .number.grouping(.never))
+                if rule.kind != .dynamic {
+                    TextField("Destination host", text: $rule.destinationHost)
+                    TextField("Destination port", value: $rule.destinationPort, format: .number.grouping(.never))
+                }
+                Text(rule.kind == .remote
+                     ? "Listen on the SSH server; connect to the destination from this Mac."
+                     : rule.kind == .local
+                     ? "Listen on this Mac; connect to the destination from the SSH server."
+                     : "SOCKS5 CONNECT proxy on this Mac. Domain names are resolved by the SSH server. TCP only; no authentication.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if rule.exposesNetwork {
+                    Text("Warning: this address may expose the forwarded service or unauthenticated proxy to other computers. Prefer 127.0.0.1 or ::1 for private use. Remote exposure also depends on the server's GatewayPorts policy.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                HStack {
+                    Toggle("Start on connect", isOn: $rule.isEnabled)
+                    Spacer()
+                    Button("Remove Rule", role: .destructive) { rules.removeAll { $0.id == rule.id } }
+                }
+            }
+            .padding(.vertical, 6)
+        }
+        Button("Add Forwarding Rule", systemImage: "plus") {
+            let used = Set(rules.filter { $0.kind != .remote }.map(\.bindPort))
+            let port = (8080...8112).first { !used.contains($0) } ?? 8080
+            rules.append(PortForwardRule(bindPort: port))
+        }
+        .disabled(rules.count >= 32)
+        if let error = PortForwardRule.validationError(in: rules) {
+            Text(verbatim: error).font(.caption).foregroundStyle(.red)
+        }
+        Text("Use the tab's Port Forwarding menu to inspect, start, or stop individual rules. Editing saved rules takes effect after reconnecting.")
+            .font(.caption).foregroundStyle(.secondary)
     }
 }

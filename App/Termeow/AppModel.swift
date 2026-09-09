@@ -15,6 +15,7 @@ final class AppModel {
     var selectedTabID: WorkspaceTab.ID?
     var searchText = ""
     var editor: SessionEditorState?
+    var forwardingController: ConnectionController?
     var sessionPendingDeletion: SessionProfile?
     var tabPendingClosure: TabCloseRequest?
     var panePendingClosure: PaneCloseRequest?
@@ -332,6 +333,10 @@ final class AppModel {
     }
 
     func copySSHCommand(_ profile: SessionProfile) {
+        if let error = PortForwardRule.validationError(in: profile.portForwards) {
+            statusMessage = error
+            return
+        }
         let route: [SessionProfile]
         do {
             route = try SSHConnectionRoute.resolve(destination: profile, profiles: profiles)
@@ -346,7 +351,8 @@ final class AppModel {
         }.joined(separator: ",")
         let proxy = jumps.isEmpty ? "" : " -J \(shellArgument(jumps))"
         let port = profile.port == 22 ? "" : " -p \(profile.port)"
-        let command = "ssh\(proxy)\(port) -- \(destination)"
+        let forwarding = profile.portForwards.filter(\.isEnabled).flatMap(\.sshArguments).map(shellArgument).joined(separator: " ")
+        let command = "ssh\(proxy)\(port)\(forwarding.isEmpty ? "" : " " + forwarding) -- \(destination)"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(command, forType: .string)
         statusMessage = String(localized: "SSH command copied")
@@ -360,6 +366,10 @@ final class AppModel {
         state.profile.groupName = state.profile.groupName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard state.profile.isValidForSaving else {
             editor = state
+            return
+        }
+        if let error = PortForwardRule.validationError(in: state.profile.portForwards) {
+            statusMessage = error
             return
         }
         do {
@@ -984,7 +994,7 @@ final class AppModel {
 
 @MainActor
 @Observable
-final class ConnectionController {
+final class ConnectionController: Identifiable {
     let id: UUID
     var profile: SessionProfile
     var state: SSHConnectionState = .disconnected
@@ -992,6 +1002,7 @@ final class ConnectionController {
     var rows = 24
     var lastError: String?
     var remoteTitle: String?
+    var portForwardStatuses: [PortForwardStatus]
 
     private weak var model: AppModel?
     private var session: CitadelSSHSession?
@@ -1007,6 +1018,7 @@ final class ConnectionController {
         self.id = id
         self.profile = profile
         self.model = model
+        self.portForwardStatuses = profile.portForwards.map { PortForwardStatus(rule: $0, state: .stopped) }
     }
 
     func hostedTerminal() -> SSHTerminalView {
@@ -1096,6 +1108,9 @@ final class ConnectionController {
         session = nil
         outbound.attach(nil)
         state = .disconnected
+        portForwardStatuses = portForwardStatuses.map {
+            var value = $0; value.state = .stopped; value.connections = 0; return value
+        }
         Task { await previous?.disconnect() }
     }
 
@@ -1104,6 +1119,9 @@ final class ConnectionController {
         self.rows = rows
         Task { try? await session?.resize(cols: cols, rows: rows) }
     }
+
+    func startPortForward(_ id: UUID) { Task { await session?.startPortForward(id) } }
+    func stopPortForward(_ id: UUID) { Task { await session?.stopPortForward(id) } }
 
     private func runConnect() async {
         lastError = nil
@@ -1129,6 +1147,13 @@ final class ConnectionController {
             await bridge.prompt(check)
         }
         session = ssh
+        portForwardStatuses = profile.portForwards.map { PortForwardStatus(rule: $0, state: .stopped) }
+        ssh.onPortForwardChange = { [weak self, weak ssh] statuses in
+            Task { @MainActor in
+                guard let self, let ssh, self.session === ssh else { return }
+                self.portForwardStatuses = statuses
+            }
+        }
         ssh.onOutput = { [inbound] data in
             inbound.feed(data)
         }

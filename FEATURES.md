@@ -96,7 +96,7 @@ Update this file in the same PR as the feature.
 - [x] ProxyJump (up to eight saved-session jump hosts, per-hop credentials and host-key checks, route validation, terminal and SFTP support)
 - [ ] ProxyCommand
 - [ ] HTTP / SOCKS5 / system proxy
-- [ ] Local (`-L`), remote (`-R`), and dynamic (`-D`) port forwarding
+- [x] Local (`-L`), remote (`-R`), and dynamic SOCKS5 CONNECT (`-D`) TCP forwarding, with saved rules, per-rule status/start/stop, loopback defaults, and connection-scoped cleanup
 - [ ] Auto-reconnect with backoff
 - [ ] Compression
 - [ ] Extra environment variables (`AcceptEnv`)
