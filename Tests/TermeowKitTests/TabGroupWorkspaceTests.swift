@@ -136,3 +136,63 @@ import Testing
     #expect(frames[first] == CGRect(x: 0, y: 0, width: 497, height: 600))
     #expect(frames[second] == CGRect(x: 503, y: 0, width: 497, height: 600))
 }
+
+@Test func closingOnlyTabInSplitCollapsesOnlyItsGroup() throws {
+    let a = UUID(), b = UUID(), c = UUID()
+    var workspace = TabGroupWorkspace(tabIDs: [a, b, c])
+    let original = workspace.activeGroupID
+    let split = workspace.split(groupID: original, direction: .right, moving: c)
+    let right = try #require(split)
+    workspace.closeTab(c)
+    #expect(workspace.groups.count == 1)
+    #expect(workspace.layout == .leaf(original))
+    #expect(!workspace.layout.contains(right))
+    #expect(workspace.activeGroupID == original)
+    #expect(workspace.activeGroup?.tabIDs == [a, b])
+    #expect(workspace.activeGroup?.selectedTabID == a)
+}
+
+@Test func closingInactiveSplitDoesNotChangeOtherGroupSelection() throws {
+    let a = UUID(), b = UUID()
+    var workspace = TabGroupWorkspace(tabIDs: [a, b])
+    let original = workspace.activeGroupID
+    let split = workspace.split(groupID: original, direction: .down, moving: b)
+    let bottom = try #require(split)
+    workspace.closeTab(a)
+    #expect(workspace.activeGroupID == bottom)
+    #expect(workspace.activeGroup?.selectedTabID == b)
+    #expect(workspace.layout == .leaf(bottom))
+}
+
+@Test func closingTabSelectsAdjacentTabAndLastTabLeavesSingleEmptyWorkspace() {
+    let a = UUID(), b = UUID(), c = UUID()
+    var workspace = TabGroupWorkspace(tabIDs: [a, b, c])
+    workspace.reconcile(tabIDs: [a, b, c], selectedTabID: b)
+    workspace.closeTab(b)
+    #expect(workspace.activeGroup?.tabIDs == [a, c])
+    #expect(workspace.activeGroup?.selectedTabID == c)
+    workspace.closeTab(c)
+    #expect(workspace.activeGroup?.selectedTabID == a)
+    workspace.closeTab(a)
+    #expect(workspace.groups.count == 1)
+    #expect(workspace.activeGroup?.tabIDs.isEmpty == true)
+    #expect(workspace.activeGroup?.selectedTabID == nil)
+}
+
+@Test func closingZoomedNestedGroupRestoresRemainingLayoutAndRatios() throws {
+    let a = UUID(), b = UUID(), c = UUID()
+    var workspace = TabGroupWorkspace(tabIDs: [a, b, c])
+    let left = workspace.activeGroupID
+    let split = workspace.split(groupID: left, direction: .right, moving: b)
+    let right = try #require(split)
+    _ = workspace.split(groupID: right, direction: .down)
+    workspace.ratios = ["r": 0.3, "r1": 0.7]
+    workspace.maximizedGroupID = left
+    workspace.closeTab(a)
+    #expect(workspace.layout.contains(left))
+    workspace.closeTab(c)
+    #expect(!workspace.layout.contains(left))
+    #expect(workspace.maximizedGroupID == nil)
+    #expect(workspace.ratios == ["r": 0.7])
+    #expect(workspace.groups.flatMap(\.tabIDs) == [b])
+}

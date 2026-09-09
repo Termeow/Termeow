@@ -147,6 +147,7 @@ Update this file in the same PR as the feature.
 - [x] Recursive tab groups with independent tab strips and empty split targets
 - [x] Move existing sessions between groups without reconnecting using tab context menus
 - [x] Native tab-strip hit testing and before/after insertion markers for adjacent tab reordering
+- [x] Native per-tab close buttons and automatic split collapse when a group's final tab closes
 - [x] Workspace-wide outer-edge split model preserving session identities and existing divider proportions
 - [ ] Complete interactive validation of native cross-group dragging and edge-drop previews
 - [x] Directional group focus, maximize/restore, merge all groups, and confirmed group closure

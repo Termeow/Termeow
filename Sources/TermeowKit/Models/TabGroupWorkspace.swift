@@ -139,6 +139,18 @@ public struct TabGroupWorkspace: Codable, Equatable, Sendable {
         if maximizedGroupID == id { maximizedGroupID = nil }
     }
 
+    /// Closing a group's final tab removes its split while preserving other groups.
+    public mutating func closeTab(_ id: UUID) {
+        guard let index = groups.firstIndex(where: { $0.tabIDs.contains(id) }),
+              let tabIndex = groups[index].tabIDs.firstIndex(of: id) else { return }
+        let groupID = groups[index].id
+        groups[index].tabIDs.remove(at: tabIndex)
+        if groups[index].selectedTabID == id {
+            groups[index].selectedTabID = groups[index].tabIDs.isEmpty ? nil : groups[index].tabIDs[min(tabIndex, groups[index].tabIDs.count - 1)]
+        }
+        if groups[index].tabIDs.isEmpty { removeGroup(groupID) }
+    }
+
     private func leafPath(_ id: UUID, in node: PaneLayout, path: String = "r") -> String? {
         switch node {
         case .leaf(let candidate): return candidate == id ? path : nil

@@ -15,13 +15,13 @@ struct GroupWorkspaceView: View {
         .alert("Close Tab Group?", isPresented: Binding(
             get: { model.groupPendingClosure != nil },
             set: { if !$0 { model.groupPendingClosure = nil } }
-        )) {
+        ), presenting: model.groupPendingClosure) { id in
             Button("Cancel", role: .cancel) { model.groupPendingClosure = nil }
             Button("Close and Disconnect", role: .destructive) {
-                if let id = model.groupPendingClosure { model.closeGroup(id) }
+                model.closeGroup(id)
             }
-        } message: {
-            let count = model.tabGroups.groups.first { $0.id == model.groupPendingClosure }?.tabIDs.count ?? 0
+        } message: { id in
+            let count = model.tabGroups.groups.first { $0.id == id }?.tabIDs.count ?? 0
             Text("Closing this group closes all \(count) tabs and disconnects their sessions.")
         }
     }

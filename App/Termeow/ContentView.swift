@@ -29,29 +29,14 @@ struct ContentView: View {
                 secondaryButton: .cancel()
             )
         }
-        .alert(item: $model.tabPendingClosure) { request in
-            Alert(
-                title: Text(String(format: String(localized: "Close “%@”?"), request.title)),
-                message: Text("Closing the selected tabs will disconnect their active SSH sessions."),
-                primaryButton: .destructive(Text("Close and Disconnect")) {
-                    model.confirmCloseTab(request)
-                },
-                secondaryButton: .cancel {
-                    model.cancelCloseTab()
-                }
-            )
-        }
-        .alert(item: $model.panePendingClosure) { request in
-            Alert(
-                title: Text(String(format: String(localized: "Close “%@” Pane?"), request.title)),
-                message: Text("This pane has an active SSH connection. Closing it will disconnect the session."),
-                primaryButton: .destructive(Text("Close and Disconnect")) {
-                    model.confirmClosePane(request)
-                },
-                secondaryButton: .cancel {
-                    model.cancelClosePane()
-                }
-            )
+        .alert("Close Tabs?", isPresented: Binding(
+            get: { model.tabPendingClosure != nil },
+            set: { if !$0 { model.cancelCloseTab() } }
+        ), presenting: model.tabPendingClosure) { request in
+            Button("Close and Disconnect", role: .destructive) { model.confirmCloseTab(request) }
+            Button("Cancel", role: .cancel) { model.cancelCloseTab() }
+        } message: { request in
+            Text(String(format: String(localized: "Closing “%@” will disconnect its active SSH sessions."), request.title))
         }
     }
 

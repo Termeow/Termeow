@@ -171,6 +171,7 @@ private final class SessionTabDocumentView: NSView, NSDraggingSource {
     private var down: (id: UUID, point: CGPoint, close: Bool)?
     private var caret: CGFloat?
     private var dragInProgress = false
+    private var closeButtons: [UUID: SessionTabCloseButton] = [:]
     private weak var dragWorkspace: WorkspaceDropHostView?
     private var workspace: WorkspaceDropHostView? {
         var view = superview
@@ -193,12 +194,25 @@ private final class SessionTabDocumentView: NSView, NSDraggingSource {
     required init?(coder: NSCoder) { fatalError("Created in code") }
 
     func rebuildFrames(minimumWidth: CGFloat) {
+        let validIDs = Set(tabs.map(\.id))
+        for id in Array(closeButtons.keys) where !validIDs.contains(id) {
+            closeButtons.removeValue(forKey: id)?.removeFromSuperview()
+        }
         var x: CGFloat = 4
         tabFrames = [:]
         for tab in tabs {
             let textWidth = (tab.controller.title as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
             let width = min(220, max(90, textWidth + 48))
             tabFrames[tab.id] = CGRect(x: x, y: 4, width: width, height: 26)
+            let button = closeButtons[tab.id] ?? SessionTabCloseButton()
+            button.tabID = tab.id
+            button.target = self
+            button.action = #selector(closeTabButton(_:))
+            button.frame = closeRect(tabFrames[tab.id]!)
+            button.toolTip = String(localized: "Close Tab")
+            button.setAccessibilityLabel(String(localized: "Close Tab") + " — " + tab.controller.title)
+            if button.superview !== self { addSubview(button) }
+            closeButtons[tab.id] = button
             x += width + 4
         }
         setFrameSize(CGSize(width: max(minimumWidth, x), height: 34))
@@ -208,9 +222,14 @@ private final class SessionTabDocumentView: NSView, NSDraggingSource {
         CGRect(x: frame.maxX - 23, y: frame.minY + 3, width: 20, height: 20)
     }
 
+    @objc private func closeTabButton(_ sender: SessionTabCloseButton) {
+        down = nil
+        owner?.model?.requestCloseTab(sender.tabID)
+    }
+
     override func accessibilityChildren() -> [Any]? {
         guard let window else { return [] }
-        return tabs.enumerated().flatMap { index, tab -> [TabAccessibilityAction] in
+        return tabs.enumerated().flatMap { index, tab -> [Any] in
             guard let rect = tabFrames[tab.id], rect.intersects(visibleRect) else { return [] }
             let select = TabAccessibilityAction { [weak self] in
                 self?.owner?.model?.selectTab(tab.id)
@@ -222,12 +241,7 @@ private final class SessionTabDocumentView: NSView, NSDraggingSource {
             select.setAccessibilityIdentifier("session-tab-\(tab.id)")
             select.setAccessibilityValue(tab.id == selectedID)
             select.setAccessibilityFrame(window.convertToScreen(convert(rect.intersection(visibleRect), to: nil)))
-            let close = TabAccessibilityAction { [weak self] in self?.owner?.model?.requestCloseTab(tab.id) }
-            close.setAccessibilityParent(self)
-            close.setAccessibilityRole(.button)
-            close.setAccessibilityLabel(String(localized: "Close Tab") + " \(index + 1)")
-            close.setAccessibilityFrame(window.convertToScreen(convert(closeRect(rect), to: nil)))
-            return [select, close]
+            return [select] + (closeButtons[tab.id].map { [$0] } ?? [])
         }
     }
     override func draw(_ dirtyRect: NSRect) {
@@ -245,12 +259,6 @@ private final class SessionTabDocumentView: NSView, NSDraggingSource {
             (tab.controller.title as NSString).draw(in: CGRect(x: rect.minX + 20, y: rect.minY + 5, width: rect.width - 46, height: 18), withAttributes: [
                 .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor, .paragraphStyle: paragraph
             ])
-            let close = closeRect(rect).insetBy(dx: 6, dy: 6)
-            NSColor.secondaryLabelColor.setStroke()
-            let cross = NSBezierPath()
-            cross.move(to: CGPoint(x: close.minX, y: close.minY)); cross.line(to: CGPoint(x: close.maxX, y: close.maxY))
-            cross.move(to: CGPoint(x: close.maxX, y: close.minY)); cross.line(to: CGPoint(x: close.minX, y: close.maxY))
-            cross.stroke()
         }
         if let caret {
             NSColor.controlAccentColor.setFill()
@@ -376,6 +384,23 @@ private final class SessionTabDocumentView: NSView, NSDraggingSource {
         add(String(localized: "Close Tabs to the Right"), enabled: model.hasTabsToRight(of: tab.id)) { model.closeTabsToRight(of: tab.id) }
         return menu
     }
+}
+
+private final class SessionTabCloseButton: NSButton {
+    var tabID = UUID()
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        title = ""
+        image = NSImage(systemSymbolName: "xmark", accessibilityDescription: String(localized: "Close Tab"))
+        imagePosition = .imageOnly
+        imageScaling = .scaleProportionallyDown
+        symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 9, weight: .regular)
+        isBordered = false
+        setButtonType(.momentaryChange)
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("Created in code") }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 private final class TabAccessibilityAction: NSAccessibilityElement {

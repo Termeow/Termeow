@@ -525,14 +525,10 @@ final class AppModel {
 
     private func closeTab(_ id: WorkspaceTab.ID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let groupID = tabGroups.groups.first { $0.tabIDs.contains(id) }?.id
         let wasSelected = selectedTabID == id
         tabs[index].disconnectAll()
         tabs.remove(at: index)
-        tabGroups.reconcile(tabIDs: tabs.map(\.id), selectedTabID: nil)
-        if let groupID, tabGroups.groups.first(where: { $0.id == groupID })?.tabIDs.isEmpty == true {
-            tabGroups.removeGroup(groupID)
-        }
+        tabGroups.closeTab(id)
         if wasSelected {
             selectedTabID = tabGroups.activeGroup?.selectedTabID
         }
