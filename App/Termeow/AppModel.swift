@@ -9,6 +9,8 @@ final class AppModel {
     var profiles: [SessionProfile] = []
     var sessionGroups: [String] = []
     var tabs: [WorkspaceTab] = []
+    var tabGroups = TabGroupWorkspace()
+    var groupPendingClosure: UUID?
     var selectedProfileID: SessionProfile.ID?
     var selectedTabID: WorkspaceTab.ID?
     var searchText = ""
@@ -58,7 +60,7 @@ final class AppModel {
     }
 
     var selectedPaneCount: Int {
-        selectedTab?.paneCount ?? 0
+        tabGroups.groups.count
     }
 
     var sidebarVisible: Bool {
@@ -127,6 +129,19 @@ final class AppModel {
             }
         }
         selectedTabID = snapshot.selectedTabIndex.flatMap { restoredTabIDs[$0] } ?? tabs.first?.id
+        // Upgrade the first split-pane preview to one session per tab.
+        let oldSelected = selectedTab?.controller.id
+        tabs = tabs.flatMap { tab in
+            tab.allControllers.map { WorkspaceTab(controller: $0) }
+        }
+        if let savedIDs = snapshot.tabIDs, savedIDs.count == tabs.count {
+            tabs = zip(savedIDs, tabs).map { WorkspaceTab(id: $0.0, controller: $0.1.controller) }
+        }
+        selectedTabID = tabs.first(where: { $0.controller.id == oldSelected })?.id ?? tabs.first?.id
+        tabGroups = snapshot.tabGroups ?? TabGroupWorkspace(tabIDs: tabs.map(\.id))
+        if snapshot.tabGroups != nil { selectedTabID = tabGroups.activeGroup?.selectedTabID }
+        tabGroups.reconcile(tabIDs: tabs.map(\.id), selectedTabID: selectedTabID)
+        selectedTabID = tabGroups.activeGroup?.selectedTabID
     }
 
     func setTypography(_ typography: TerminalTypography) {
@@ -151,6 +166,7 @@ final class AppModel {
     }
 
     func persist() {
+        tabGroups.reconcile(tabIDs: tabs.map(\.id), selectedTabID: selectedTabID)
         do {
             try sessionStore.saveLibrary(SessionLibrary(profiles: profiles, groups: sessionGroupNames))
             try workspaceStore.save(
@@ -160,7 +176,9 @@ final class AppModel {
                     selectedTabIndex: selectedTabID.flatMap { selectedID in
                         tabs.firstIndex { $0.id == selectedID }
                     },
-                    tabs: tabs.map(\.snapshot)
+                    tabs: tabs.map(\.snapshot),
+                    tabGroups: tabGroups,
+                    tabIDs: tabs.map(\.id)
                 )
             )
         } catch {
@@ -211,14 +229,19 @@ final class AppModel {
         guard profiles.contains(where: { $0.id == profile.id }) else { return }
         try? keychain.deleteSecret(id: profile.credentialID)
         let removedTabIDs = Set(tabs.lazy.filter { $0.contains(profileID: profile.id) }.map(\.id))
+        let affectedGroups = tabGroups.groups.filter { !$0.tabIDs.allSatisfy { !removedTabIDs.contains($0) } }.map(\.id)
         tabs.lazy.filter { $0.contains(profileID: profile.id) }.forEach { $0.disconnectAll() }
         tabs.removeAll { $0.contains(profileID: profile.id) }
+        tabGroups.reconcile(tabIDs: tabs.map(\.id), selectedTabID: nil)
+        for id in affectedGroups where tabGroups.groups.first(where: { $0.id == id })?.tabIDs.isEmpty == true {
+            tabGroups.removeGroup(id)
+        }
         profiles.removeAll { $0.id == profile.id }
         if selectedProfileID == profile.id {
             selectedProfileID = profiles.first?.id
         }
         if let selectedTabID, removedTabIDs.contains(selectedTabID) {
-            self.selectedTabID = tabs.first?.id
+            self.selectedTabID = tabGroups.activeGroup?.selectedTabID
         }
         sessionPendingDeletion = nil
         persist()
@@ -448,8 +471,9 @@ final class AppModel {
     }
 
     func selectTab(at index: Int) {
-        guard tabs.indices.contains(index) else { return }
-        selectTab(tabs[index].id)
+        guard let ids = tabGroups.activeGroup?.tabIDs, ids.indices.contains(index) else { return }
+        selectTab(ids[index])
+        focusActiveTerminal()
     }
 
     func reorderTab(_ id: WorkspaceTab.ID, over targetID: WorkspaceTab.ID) {
@@ -492,7 +516,7 @@ final class AppModel {
 
     func confirmCloseTab(_ request: TabCloseRequest) {
         tabPendingClosure = nil
-        closeTab(request.id)
+        for id in [request.id] + request.extraIDs { closeTab(id) }
     }
 
     func cancelCloseTab() {
@@ -501,13 +525,19 @@ final class AppModel {
 
     private func closeTab(_ id: WorkspaceTab.ID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let groupID = tabGroups.groups.first { $0.tabIDs.contains(id) }?.id
         let wasSelected = selectedTabID == id
         tabs[index].disconnectAll()
         tabs.remove(at: index)
+        tabGroups.reconcile(tabIDs: tabs.map(\.id), selectedTabID: nil)
+        if let groupID, tabGroups.groups.first(where: { $0.id == groupID })?.tabIDs.isEmpty == true {
+            tabGroups.removeGroup(groupID)
+        }
         if wasSelected {
-            selectedTabID = tabs.indices.contains(index) ? tabs[index].id : tabs.last?.id
+            selectedTabID = tabGroups.activeGroup?.selectedTabID
         }
         persist()
+        focusActiveTerminal()
     }
 
     func reconnectTab(_ id: WorkspaceTab.ID) {
@@ -558,52 +588,109 @@ final class AppModel {
     }
 
     func closeOtherTabs(keeping id: WorkspaceTab.ID) {
-        guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        tabs.lazy.filter { $0.id != id }.forEach { $0.disconnectAll() }
-        tabs = [tab]
-        selectedTabID = id
-        persist()
+        guard let group = tabGroups.groups.first(where: { $0.tabIDs.contains(id) }) else { return }
+        requestCloseTabs(group.tabIDs.filter { $0 != id })
     }
 
     func closeTabsToRight(of id: WorkspaceTab.ID) {
-        guard let index = tabs.firstIndex(where: { $0.id == id }), index + 1 < tabs.count else { return }
-        tabs[(index + 1)...].forEach { $0.disconnectAll() }
-        let removedSelectedTab = tabs[(index + 1)...].contains { $0.id == selectedTabID }
-        tabs.removeSubrange((index + 1)...)
-        if removedSelectedTab {
-            selectedTabID = id
-        }
-        persist()
+        guard let group = tabGroups.groups.first(where: { $0.tabIDs.contains(id) }),
+              let index = group.tabIDs.firstIndex(of: id) else { return }
+        requestCloseTabs(Array(group.tabIDs.dropFirst(index + 1)))
     }
 
     func hasTabsToRight(of id: WorkspaceTab.ID) -> Bool {
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
-        return index + 1 < tabs.count
+        guard let group = tabGroups.groups.first(where: { $0.tabIDs.contains(id) }),
+              let index = group.tabIDs.firstIndex(of: id) else { return false }
+        return index + 1 < group.tabIDs.count
+    }
+
+    private func requestCloseTabs(_ ids: [UUID]) {
+        guard let first = ids.first else { return }
+        if tabs.contains(where: { ids.contains($0.id) && $0.requiresCloseConfirmation }) {
+            tabPendingClosure = TabCloseRequest(id: first, title: String(localized: "Selected Tabs"), extraIDs: Array(ids.dropFirst()))
+        } else { ids.forEach { closeTab($0) } }
     }
 
     func splitSelectedPane(_ axis: PaneSplitAxis) {
-        guard let tabID = selectedTabID else { return }
-        splitPane(in: tabID, axis: axis)
+        createGroup(axis == .vertical ? .right : .down)
+    }
+
+    func activateGroup(_ id: UUID, focus: Bool = true) {
+        tabGroups.activate(id)
+        selectedTabID = tabGroups.activeGroup?.selectedTabID
+        if let profile = selectedTab?.controller.profile { selectedProfileID = profile.id }
+        persist()
+        if focus { focusActiveTerminal() }
+    }
+
+    func focusActiveTerminal() {
+        DispatchQueue.main.async { [weak self] in self?.selectedTab?.controller.focusTerminal() }
+    }
+
+    func createGroup(_ direction: SplitDirection, moving tabID: UUID? = nil) {
+        guard let id = tabGroups.split(groupID: tabGroups.activeGroupID, direction: direction, moving: tabID) else { return }
+        activateGroup(id)
+    }
+
+    func moveSessionTab(_ tabID: UUID, to groupID: UUID, direction: SplitDirection? = nil, before targetID: UUID? = nil) {
+        guard tabs.contains(where: { $0.id == tabID }) else { return }
+        if let direction {
+            // Dropping the only tab on its own edge would just create an empty region.
+            if let group = tabGroups.groups.first(where: { $0.id == groupID }), group.tabIDs == [tabID] { return }
+            guard let newID = tabGroups.split(groupID: groupID, direction: direction, moving: tabID) else { return }
+            activateGroup(newID)
+        } else {
+            tabGroups.move(tabID, to: groupID, before: targetID)
+            activateGroup(groupID)
+        }
+    }
+
+    func focusGroup(_ direction: SplitDirection) {
+        guard let neighbor = tabGroups.neighbor(direction) else { return }
+        activateGroup(neighbor)
+    }
+
+    func mergeAllGroups() {
+        tabGroups.mergeAll()
+        activateGroup(tabGroups.activeGroupID)
+    }
+
+    func toggleGroupZoom() {
+        tabGroups.maximizedGroupID = tabGroups.maximizedGroupID == nil ? tabGroups.activeGroupID : nil
+        persist()
+        focusActiveTerminal()
+    }
+
+    func equalizeGroups() {
+        tabGroups.ratios = [:]
+        persist()
+    }
+
+    func setGroupRatio(_ ratio: Double, path: String, save: Bool) {
+        tabGroups.ratios[path] = min(0.9, max(0.1, ratio))
+        if save { persist() }
+    }
+
+    func requestCloseGroup(_ id: UUID) {
+        guard let group = tabGroups.groups.first(where: { $0.id == id }) else { return }
+        if tabs.contains(where: { group.tabIDs.contains($0.id) && $0.requiresCloseConfirmation }) {
+            groupPendingClosure = id
+        } else { closeGroup(id) }
+    }
+
+    func closeGroup(_ id: UUID) {
+        guard let group = tabGroups.groups.first(where: { $0.id == id }) else { return }
+        tabs.filter { group.tabIDs.contains($0.id) }.forEach { $0.disconnectAll() }
+        tabs.removeAll { group.tabIDs.contains($0.id) }
+        if tabGroups.groups.count == 1 { tabGroups = TabGroupWorkspace() }
+        else { tabGroups.removeGroup(id) }
+        groupPendingClosure = nil
+        activateGroup(tabGroups.activeGroupID)
     }
 
     func splitPane(in tabID: WorkspaceTab.ID, axis: PaneSplitAxis) {
-        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
-        let sourcePaneID = tabs[index].selectedPaneID
-        let profile = tabs[index].controller.profile
-        let controller = ConnectionController(profile: profile, model: self)
-        guard let layout = tabs[index].layout.splitting(
-            paneID: sourcePaneID,
-            newPaneID: controller.id,
-            axis: axis
-        ) else { return }
-
-        tabs[index].layout = layout
-        tabs[index].controllers[controller.id] = controller
-        tabs[index].selectedPaneID = controller.id
-        selectedTabID = tabID
-        selectedProfileID = profile.id
-        persist()
-        controller.connect()
+        selectTab(tabID)
+        createGroup(axis == .vertical ? .right : .down, moving: tabID)
     }
 
     func focusPane(_ paneID: UUID) {
@@ -713,10 +800,10 @@ final class AppModel {
     }
 
     func selectRelativeTab(_ delta: Int) {
-        guard let id = selectedTabID, let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let next = (index + delta + tabs.count) % max(tabs.count, 1)
-        selectedTabID = tabs[next].id
-        persist()
+        guard let ids = tabGroups.activeGroup?.tabIDs, !ids.isEmpty,
+              let id = selectedTabID, let index = ids.firstIndex(of: id) else { return }
+        selectTab(ids[(index + delta + ids.count) % ids.count])
+        focusActiveTerminal()
     }
 
     private func closePane(tabID: WorkspaceTab.ID, paneID: UUID) {
@@ -1168,6 +1255,7 @@ struct WorkspaceTab: Identifiable {
 struct TabCloseRequest: Identifiable {
     let id: WorkspaceTab.ID
     let title: String
+    var extraIDs: [UUID] = []
 }
 
 struct PaneCloseRequest: Identifiable {

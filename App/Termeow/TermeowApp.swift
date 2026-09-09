@@ -70,24 +70,35 @@ struct AppCommands: Commands {
             Button("Delete Session") { model.deleteSelected() }
                 .disabled(model.selectedProfile == nil)
         }
-        CommandMenu("Pane") {
-            Button("Split Pane Vertically") { model.splitSelectedPane(.vertical) }
+        CommandMenu("Tab Groups") {
+            Button("New Tab Group to the Right") { model.createGroup(.right) }
                 .keyboardShortcut("d", modifiers: [.command])
-                .disabled(model.selectedTab == nil)
-            Button("Split Pane Horizontally") { model.splitSelectedPane(.horizontal) }
+                .disabled(model.selectedPaneCount >= 16)
+            Button("New Tab Group Below") { model.createGroup(.down) }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
-                .disabled(model.selectedTab == nil)
+                .disabled(model.selectedPaneCount >= 16)
             Divider()
-            Button("Focus Previous Pane") { model.selectRelativePane(-1) }
+            Button("Focus Left Group") { model.focusGroup(.left) }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
                 .disabled(model.selectedPaneCount < 2)
-            Button("Focus Next Pane") { model.selectRelativePane(1) }
+            Button("Focus Right Group") { model.focusGroup(.right) }
                 .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
                 .disabled(model.selectedPaneCount < 2)
+            Button("Focus Group Above") { model.focusGroup(.up) }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                .disabled(model.selectedPaneCount < 2)
+            Button("Focus Group Below") { model.focusGroup(.down) }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                .disabled(model.selectedPaneCount < 2)
             Divider()
-            Button("Close Pane") { model.requestCloseSelectedPane() }
+            Button(model.tabGroups.maximizedGroupID == nil ? "Maximize Tab Group" : "Restore Tab Groups") { model.toggleGroupZoom() }
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .disabled(model.selectedPaneCount < 2)
+            Button("Equalize Tab Groups") { model.equalizeGroups() }.disabled(model.selectedPaneCount < 2)
+            Button("Merge All Tab Groups") { model.mergeAllGroups() }.disabled(model.selectedPaneCount < 2)
+            Divider()
+            Button("Close Tab Group") { model.requestCloseGroup(model.tabGroups.activeGroupID) }
                 .keyboardShortcut("w", modifiers: [.command, .option])
-                .disabled(model.selectedTab == nil)
         }
         CommandGroup(after: .textEditing) {
             Button("Find…") { model.findBarVisible = true }
@@ -125,7 +136,7 @@ struct AppCommands: Commands {
                     model.selectTab(at: position - 1)
                 }
                 .keyboardShortcut(KeyEquivalent(Character(String(position))), modifiers: [.command])
-                .disabled(!model.tabs.indices.contains(position - 1))
+                .disabled(!(model.tabGroups.activeGroup?.tabIDs.indices.contains(position - 1) ?? false))
             }
         }
         CommandGroup(replacing: .help) {

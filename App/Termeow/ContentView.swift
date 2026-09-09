@@ -32,7 +32,7 @@ struct ContentView: View {
         .alert(item: $model.tabPendingClosure) { request in
             Alert(
                 title: Text(String(format: String(localized: "Close “%@”?"), request.title)),
-                message: Text("This tab has active SSH connections. Closing it will disconnect all sessions."),
+                message: Text("Closing the selected tabs will disconnect their active SSH sessions."),
                 primaryButton: .destructive(Text("Close and Disconnect")) {
                     model.confirmCloseTab(request)
                 },
@@ -71,7 +71,6 @@ struct ContentView: View {
 
     private var detailColumn: some View {
         VStack(spacing: 0) {
-            TabBarView()
             detailBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if model.statusBarVisible {
@@ -98,12 +97,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detailBody: some View {
-        if let tab = model.selectedTab {
-            TerminalWorkspaceView(tabID: tab.id)
-                .id(tab.id)
-        } else {
-            EmptyTerminalView()
-        }
+        GroupWorkspaceView()
     }
 }
 
@@ -116,13 +110,13 @@ struct StatusBarView: View {
                 Text(verbatim: "\(tab.controller.profile.host):\(tab.controller.profile.port)")
                 Text(tab.controller.statusText)
                 Text(verbatim: "\(tab.controller.cols)×\(tab.controller.rows)")
-                if tab.paneCount > 1,
-                   let paneIndex = tab.layout.paneIDs.firstIndex(of: tab.selectedPaneID) {
+                if model.tabGroups.groups.count > 1,
+                   let paneIndex = model.tabGroups.layout.paneIDs.firstIndex(of: model.tabGroups.activeGroupID) {
                     Text(
                         String(
-                            format: String(localized: "Pane %lld of %lld"),
+                            format: String(localized: "Group %lld of %lld"),
                             Int64(paneIndex + 1),
-                            Int64(tab.paneCount)
+                            Int64(model.tabGroups.groups.count)
                         )
                     )
                 }

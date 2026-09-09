@@ -144,7 +144,11 @@ Update this file in the same PR as the feature.
 - [ ] Pin tab / tab color
 - [ ] Background-tab activity / dirty highlight
 - [x] Confirm `⌘W` while the tab is still connected
-- [x] Recursive horizontal and vertical split panes with independent SSH connections
+- [x] Recursive tab groups with independent tab strips and empty split targets
+- [x] Move existing sessions between groups without reconnecting using tab context menus
+- [ ] Complete interactive validation of native cross-group dragging and edge-drop previews
+- [x] Directional group focus, maximize/restore, merge all groups, and confirmed group closure
+- [x] Resizable group dividers with persisted layout, proportions, and per-group selection
 - [ ] Local shell tab (`/bin/zsh` — architecture only; not the product core)
 
 ## SFTP

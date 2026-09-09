@@ -31,16 +31,22 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
     public var selectedProfileID: UUID?
     public var selectedTabIndex: Int?
     public var tabs: [WorkspaceTabSnapshot]?
+    public var tabGroups: TabGroupWorkspace?
+    public var tabIDs: [UUID]?
 
     public init(
         openSessionIDs: [UUID] = [],
         selectedProfileID: UUID? = nil,
         selectedTabIndex: Int? = nil,
-        tabs: [WorkspaceTabSnapshot]? = nil
+        tabs: [WorkspaceTabSnapshot]? = nil,
+        tabGroups: TabGroupWorkspace? = nil,
+        tabIDs: [UUID]? = nil
     ) {
         self.openSessionIDs = openSessionIDs
         self.selectedProfileID = selectedProfileID
         self.selectedTabIndex = selectedTabIndex
         self.tabs = tabs
+        self.tabGroups = tabGroups
+        self.tabIDs = tabIDs
     }
 }
