@@ -8,11 +8,9 @@
 "Add to Favorites" = "Add to Favorites";
 "Advanced" = "Advanced";
 "Authentication" = "Authentication";
-"Bell" = "Bell";
 "Cancel" = "Cancel";
 "Case sensitive" = "Case sensitive";
 "Choose Private Key" = "Choose Private Key";
-"Choose how the terminal responds when a remote program sends a bell." = "Choose how the terminal responds when a remote program sends a bell.";
 "Choose…" = "Choose…";
 "Clear Screen" = "Clear Screen";
 "Color Scheme" = "Color Scheme";
@@ -80,7 +78,6 @@
 "New Tab" = "New Tab";
 "Next" = "Next";
 "Next Tab" = "Next Tab";
-"None" = "None";
 "No results" = "No results";
 "No Sessions" = "No Sessions";
 "No Terminal" = "No Terminal";
@@ -114,8 +111,6 @@
 "Sort By" = "Sort By";
 "Show Sidebar" = "Show Sidebar";
 "Show Status Bar" = "Show Status Bar";
-"Sound" = "Sound";
-"Sound and Visual" = "Sound and Visual";
 "SSH command copied" = "SSH command copied";
 "Startup Command" = "Startup Command";
 "System Monospaced" = "System Monospaced";
@@ -132,7 +127,6 @@
 "Trust and Save" = "Trust and Save";
 "Unknown host key" = "Unknown host key";
 "Username" = "Username";
-"Visual" = "Visual";
 "Move" = "Move";
 "Move Tab Left" = "Move Tab Left";
 "Move Tab Right" = "Move Tab Right";

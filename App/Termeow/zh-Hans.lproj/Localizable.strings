@@ -8,11 +8,9 @@
 "Add to Favorites" = "添加到收藏";
 "Advanced" = "高级";
 "Authentication" = "身份验证";
-"Bell" = "响铃";
 "Cancel" = "取消";
 "Case sensitive" = "区分大小写";
 "Choose Private Key" = "选择私钥";
-"Choose how the terminal responds when a remote program sends a bell." = "选择远程程序触发响铃时终端的提示方式。";
 "Choose…" = "选择…";
 "Clear Screen" = "清空屏幕";
 "Color Scheme" = "配色方案";
@@ -80,7 +78,6 @@
 "New Tab" = "新建标签页";
 "Next" = "下一个";
 "Next Tab" = "下一个标签页";
-"None" = "关闭";
 "No results" = "无结果";
 "No Sessions" = "没有会话";
 "No Terminal" = "无终端";
@@ -114,8 +111,6 @@
 "Sort By" = "排序方式";
 "Show Sidebar" = "显示边栏";
 "Show Status Bar" = "显示状态栏";
-"Sound" = "声音";
-"Sound and Visual" = "声音与视觉";
 "SSH command copied" = "已复制 SSH 命令";
 "Startup Command" = "启动命令";
 "System Monospaced" = "系统等宽字体";
@@ -132,7 +127,6 @@
 "Trust and Save" = "信任并保存";
 "Unknown host key" = "未知主机密钥";
 "Username" = "用户名";
-"Visual" = "视觉";
 "Move" = "移动";
 "Move Tab Left" = "向左移动标签页";
 "Move Tab Right" = "向右移动标签页";
