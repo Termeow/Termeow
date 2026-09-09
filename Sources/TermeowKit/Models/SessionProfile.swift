@@ -32,6 +32,7 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
     public var keepAliveSeconds: Int
     public var timeoutSeconds: Int
     public var term: String
+    public var jumpHostID: UUID?
 
     public init(
         id: UUID = UUID(),
@@ -48,7 +49,8 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         credentialID: UUID = UUID(),
         keepAliveSeconds: Int = 60,
         timeoutSeconds: Int = 30,
-        term: String = "xterm-256color"
+        term: String = "xterm-256color",
+        jumpHostID: UUID? = nil
     ) {
         self.id = id
         self.name = name
@@ -65,6 +67,7 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         self.keepAliveSeconds = keepAliveSeconds
         self.timeoutSeconds = timeoutSeconds
         self.term = term
+        self.jumpHostID = jumpHostID
     }
 
     public var displayName: String {

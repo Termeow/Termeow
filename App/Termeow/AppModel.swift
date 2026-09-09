@@ -332,10 +332,21 @@ final class AppModel {
     }
 
     func copySSHCommand(_ profile: SessionProfile) {
+        let route: [SessionProfile]
+        do {
+            route = try SSHConnectionRoute.resolve(destination: profile, profiles: profiles)
+        } catch {
+            statusMessage = error.localizedDescription
+            return
+        }
         let destination = shellArgument("\(profile.username)@\(profile.host)")
-        let command = profile.port == 22
-            ? "ssh \(destination)"
-            : "ssh -p \(profile.port) \(destination)"
+        let jumps = route.dropLast().map { hop in
+            let host = hop.host.contains(":") ? "[\(hop.host)]" : hop.host
+            return "\(hop.username)@\(host):\(hop.port)"
+        }.joined(separator: ",")
+        let proxy = jumps.isEmpty ? "" : " -J \(shellArgument(jumps))"
+        let port = profile.port == 22 ? "" : " -p \(profile.port)"
+        let command = "ssh\(proxy)\(port) -- \(destination)"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(command, forType: .string)
         statusMessage = String(localized: "SSH command copied")
@@ -349,6 +360,12 @@ final class AppModel {
         state.profile.groupName = state.profile.groupName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard state.profile.isValidForSaving else {
             editor = state
+            return
+        }
+        do {
+            _ = try SSHConnectionRoute.resolve(destination: state.profile, profiles: profiles)
+        } catch {
+            statusMessage = error.localizedDescription
             return
         }
         if state.profile.name.isEmpty {
@@ -388,13 +405,20 @@ final class AppModel {
 
     func openSFTP(_ profile: SessionProfile) {
         selectedProfileID = profile.id
-        let secret = (try? keychain.secret(id: profile.credentialID)) ?? ""
+        let route: [SSHConnectionHop]
+        do {
+            route = try prepareConnectionRoute(for: profile)
+        } catch {
+            statusMessage = error.localizedDescription
+            return
+        }
         let promptCoordinator = SFTPHostKeyPromptCoordinator()
         let bridge = SFTPHostKeyBridge(coordinator: promptCoordinator)
         let service = CitadelSFTPService(
             profile: profile,
-            secret: secret,
-            hostKeyStore: hostKeyStore
+            secret: route.last?.secret ?? "",
+            hostKeyStore: hostKeyStore,
+            jumpHosts: Array(route.dropLast())
         ) { check in
             await bridge.prompt(check)
         }
@@ -409,6 +433,17 @@ final class AppModel {
         }
         sftpWindows[id] = controller
         controller.showWindow(nil)
+    }
+
+    func prepareConnectionRoute(for profile: SessionProfile) throws -> [SSHConnectionHop] {
+        try SSHConnectionRoute.resolve(destination: profile, profiles: profiles).map { hop in
+            do {
+                return SSHConnectionHop(profile: hop, secret: try keychain.secret(id: hop.credentialID) ?? "")
+            } catch {
+                if hop.id == profile.id { throw SSHError.missingCredential }
+                throw SSHError.jumpHostFailed(hop.displayName, .missingCredential)
+            }
+        }
     }
 
     func closeSelectedTabOrSFTPWindow() {
@@ -919,13 +954,21 @@ final class AppModel {
     }
 
     func promptHostKey(_ check: HostKeyCheck) async -> HostKeyDecision {
-        await withCheckedContinuation { continuation in
-            if let existing = hostKeyContinuation {
-                hostKeyContinuation = nil
-                existing.resume(returning: .cancel)
+        let request = HostKeyPromptState(check: check)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else { continuation.resume(returning: .cancel); return }
+                if let existing = hostKeyContinuation {
+                    hostKeyContinuation = nil
+                    existing.resume(returning: .cancel)
+                }
+                hostKeyContinuation = continuation
+                hostKeyPrompt = request
             }
-            hostKeyContinuation = continuation
-            hostKeyPrompt = HostKeyPromptState(check: check)
+        } onCancel: {
+            Task { @MainActor in
+                if self.hostKeyPrompt?.id == request.id { self.resolveHostKey(.cancel) }
+            }
         }
     }
 
@@ -1049,12 +1092,11 @@ final class ConnectionController {
 
     func disconnect() {
         connectTask?.cancel()
-        Task {
-            outbound.attach(nil)
-            await session?.disconnect()
-            session = nil
-            state = .disconnected
-        }
+        let previous = session
+        session = nil
+        outbound.attach(nil)
+        state = .disconnected
+        Task { await previous?.disconnect() }
     }
 
     func noteSize(cols: Int, rows: Int) {
@@ -1067,10 +1109,23 @@ final class ConnectionController {
         lastError = nil
         state = .connecting
         outbound.attach(nil)
-        let secret = (try? model?.keychain.secret(id: profile.credentialID)) ?? ""
+        let route: [SSHConnectionHop]
+        do {
+            guard let model else { throw SSHError.connectionFailed }
+            route = try model.prepareConnectionRoute(for: profile)
+            try Task.checkCancellation()
+        } catch {
+            if Task.isCancelled { return }
+            state = .failed((error as? SSHError) ?? .invalidJumpRoute)
+            lastError = (error as? SSHError)?.userMessage ?? error.localizedDescription
+            return
+        }
         let store = model?.hostKeyStore ?? HostKeyStore(fileURL: URL(fileURLWithPath: "/tmp/termeow-host-keys.json"))
         let bridge = HostKeyBridge(model: model)
-        let ssh = CitadelSSHSession(profile: profile, secret: secret, hostKeyStore: store) { check in
+        let ssh = CitadelSSHSession(
+            profile: profile, secret: route.last?.secret ?? "", hostKeyStore: store,
+            jumpHosts: Array(route.dropLast())
+        ) { check in
             await bridge.prompt(check)
         }
         session = ssh
@@ -1095,6 +1150,12 @@ final class ConnectionController {
             }
         } catch {
             ssh.onOutput = nil
+            guard session === ssh else { return }
+            if Task.isCancelled || error is CancellationError {
+                await ssh.disconnect()
+                state = .disconnected
+                return
+            }
             let mapped = (error as? SSHError) ?? .connectionFailed
             state = .failed(mapped)
             lastError = mapped.userMessage

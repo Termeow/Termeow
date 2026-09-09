@@ -721,13 +721,21 @@ final class SFTPHostKeyPromptCoordinator {
     @ObservationIgnored private var continuation: CheckedContinuation<HostKeyDecision, Never>?
 
     func request(_ check: HostKeyCheck) async -> HostKeyDecision {
-        await withCheckedContinuation { continuation in
-            if let existing = self.continuation {
-                self.continuation = nil
-                existing.resume(returning: .cancel)
+        let request = HostKeyPromptState(check: check)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else { continuation.resume(returning: .cancel); return }
+                if let existing = self.continuation {
+                    self.continuation = nil
+                    existing.resume(returning: .cancel)
+                }
+                self.continuation = continuation
+                prompt = request
             }
-            self.continuation = continuation
-            prompt = HostKeyPromptState(check: check)
+        } onCancel: {
+            Task { @MainActor in
+                if self.prompt?.id == request.id { self.cancel() }
+            }
         }
     }
 

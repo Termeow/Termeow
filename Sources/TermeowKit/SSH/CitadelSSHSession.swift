@@ -19,12 +19,15 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     private let secret: String
     private let hostKeyStore: HostKeyStore
     private let prompt: HostKeyPromptHandler
+    private let jumpHosts: [SSHConnectionHop]
 
     private var client: SSHClient?
+    private var connection: CitadelConnection?
     private var writer: TTYStdinWriter?
     private var ptyTask: Task<Void, Never>?
     private var keepAliveTask: Task<Void, Never>?
-    private var connectResumed = false
+    private var routeTask: Task<CitadelConnection, Error>?
+    private var connectCompletion: SSHConnectCompletion?
     private let stateLock = NSLock()
     private var storedState: SSHConnectionState = .disconnected
 
@@ -32,41 +35,61 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
         profile: SessionProfile,
         secret: String,
         hostKeyStore: HostKeyStore,
+        jumpHosts: [SSHConnectionHop] = [],
         prompt: @escaping HostKeyPromptHandler
     ) {
         self.profile = profile
         self.secret = secret
         self.hostKeyStore = hostKeyStore
         self.prompt = prompt
+        self.jumpHosts = jumpHosts
         let pair = AsyncStream<Data>.makeStream()
         self.output = pair.stream
         self.outputContinuation = pair.continuation
     }
 
     public func connect() async throws {
+        try await withTaskCancellationHandler {
+            try await openConnection()
+        } onCancel: { Task { await self.disconnect() } }
+    }
+
+    private func openConnection() async throws {
+        try Task.checkCancellation()
         guard state == .disconnected || isFailed else {
             return
         }
         transition(to: .connecting)
-        connectResumed = false
 
         do {
-            let client = try await CitadelConnectionFactory.connect(
-                profile: profile,
-                secret: secret,
-                hostKeyStore: hostKeyStore,
-                prompt: prompt
-            )
+            let task = Task {
+                try await CitadelConnectionFactory.connect(
+                    profile: profile, secret: secret, hostKeyStore: hostKeyStore,
+                    jumpHosts: jumpHosts, prompt: prompt
+                )
+            }
+            routeTask = task
+            let connection = try await task.value
+            routeTask = nil
+            guard !Task.isCancelled, state == .connecting else {
+                await connection.close()
+                throw CancellationError()
+            }
+            self.connection = connection
+            let client = connection.client
             self.client = client
 
             let request = ptyRequest
             let startup = profile.startupCommand
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let completion = SSHConnectCompletion(continuation)
+                connectCompletion = completion
                 ptyTask = Task { [weak self] in
-                    guard let self else { return }
+                    guard let self else { completion.finish(.failure(CancellationError())); return }
                     do {
                         try await client.withPTY(request) { inbound, outbound in
-                            self.attach(writer: outbound, continuation: continuation)
+                            guard !Task.isCancelled else { throw CancellationError() }
+                            self.attach(writer: outbound, completion: completion)
                             if !startup.isEmpty {
                                 try await outbound.write(ByteBuffer(string: startup + "\n"))
                             }
@@ -85,15 +108,20 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
                                 }
                             }
                         }
+                        completion.finish(.failure(SSHError.connectionClosed))
                         await self.markDisconnected()
                     } catch {
-                        guard !Task.isCancelled else { return }
-                        await self.failConnect(error, continuation: continuation)
+                        await self.failConnect(error, completion: completion)
                     }
                 }
             }
             AppLog.ssh.info("SSH session connected")
         } catch {
+            routeTask = nil
+            await connection?.close()
+            connection = nil
+            client = nil
+            if error is CancellationError { transition(to: .disconnected); throw error }
             transition(to: .failed(CitadelConnectionFactory.mapError(error)))
             AppLog.ssh.error("SSH connect failed")
             throw CitadelConnectionFactory.mapError(error)
@@ -101,13 +129,16 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     }
 
     public func disconnect() async {
+        routeTask?.cancel()
+        routeTask = nil
+        connectCompletion?.finish(.failure(CancellationError()))
+        connectCompletion = nil
         stopKeepAlive()
         ptyTask?.cancel()
         ptyTask = nil
         writer = nil
-        if let client {
-            try? await client.close()
-        }
+        await connection?.close()
+        connection = nil
         client = nil
         transition(to: .disconnected)
         AppLog.ssh.info("SSH session disconnected")
@@ -140,28 +171,22 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
         )
     }
 
-    private func attach(writer: TTYStdinWriter, continuation: CheckedContinuation<Void, Error>) {
+    private func attach(writer: TTYStdinWriter, completion: SSHConnectCompletion) {
         self.writer = writer
         startKeepAlive(using: writer)
         transition(to: .connected)
-        if !connectResumed {
-            connectResumed = true
-            continuation.resume()
-        }
+        completion.finish(.success(()))
     }
 
-    private func failConnect(_ error: Error, continuation: CheckedContinuation<Void, Error>) async {
+    private func failConnect(_ error: Error, completion: SSHConnectCompletion) async {
         stopKeepAlive()
         writer = nil
-        if let client {
-            try? await client.close()
-        }
+        await connection?.close()
+        connection = nil
         client = nil
         let mapped = CitadelConnectionFactory.mapError(error)
-        if !connectResumed {
-            connectResumed = true
-            continuation.resume(throwing: mapped)
-        } else if mapped == .connectionClosed {
+        completion.finish(.failure(error is CancellationError ? CancellationError() : mapped))
+        if Task.isCancelled || error is CancellationError || mapped == .connectionClosed {
             transition(to: .disconnected)
         } else {
             transition(to: .failed(mapped))
@@ -171,9 +196,8 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     private func markDisconnected() async {
         stopKeepAlive()
         writer = nil
-        if let client {
-            try? await client.close()
-        }
+        await connection?.close()
+        connection = nil
         client = nil
         transition(to: .disconnected)
     }
@@ -216,4 +240,20 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
         keepAliveTask = nil
     }
 
+}
+
+/// PTY readiness and cancellation can race; a checked continuation must be completed exactly once.
+private final class SSHConnectCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    init(_ continuation: CheckedContinuation<Void, Error>) { self.continuation = continuation }
+
+    func finish(_ result: Result<Void, Error>) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(with: result)
+    }
 }
