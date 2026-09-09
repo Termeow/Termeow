@@ -14,6 +14,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     private let outputContinuation: AsyncStream<Data>.Continuation
     public var onOutput: (@Sendable (Data) -> Void)?
     public var onStateChange: (@Sendable (SSHConnectionState) -> Void)?
+    public var onPortForwardChange: (@Sendable ([PortForwardStatus]) -> Void)?
 
     private let profile: SessionProfile
     private let secret: String
@@ -23,6 +24,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
 
     private var client: SSHClient?
     private var connection: CitadelConnection?
+    private var forwarding: SSHPortForwarding?
     private var writer: TTYStdinWriter?
     private var ptyTask: Task<Void, Never>?
     private var keepAliveTask: Task<Void, Never>?
@@ -78,6 +80,10 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
             self.connection = connection
             let client = connection.client
             self.client = client
+            let forwarding = SSHPortForwarding(connection: connection, rules: profile.portForwards) { [weak self] statuses in
+                self?.onPortForwardChange?(statuses)
+            }
+            self.forwarding = forwarding
 
             let request = ptyRequest
             let startup = profile.startupCommand
@@ -115,9 +121,12 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
                     }
                 }
             }
+            if state == .connected, !Task.isCancelled { await forwarding.startEnabled() }
             AppLog.ssh.info("SSH session connected")
         } catch {
             routeTask = nil
+            await forwarding?.shutdown()
+            forwarding = nil
             await connection?.close()
             connection = nil
             client = nil
@@ -137,6 +146,8 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
         ptyTask?.cancel()
         ptyTask = nil
         writer = nil
+        await forwarding?.shutdown()
+        forwarding = nil
         await connection?.close()
         connection = nil
         client = nil
@@ -153,6 +164,13 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
         guard let writer else { return }
         try await writer.changeSize(cols: cols, rows: rows, pixelWidth: 0, pixelHeight: 0)
     }
+
+    public func startPortForward(_ id: UUID) async {
+        guard state == .connected else { return }
+        await forwarding?.start(id)
+    }
+
+    public func stopPortForward(_ id: UUID) async { await forwarding?.stop(id) }
 
     private var isFailed: Bool {
         if case .failed = state { return true }
@@ -181,6 +199,8 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     private func failConnect(_ error: Error, completion: SSHConnectCompletion) async {
         stopKeepAlive()
         writer = nil
+        await forwarding?.shutdown()
+        forwarding = nil
         await connection?.close()
         connection = nil
         client = nil
@@ -196,6 +216,8 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
     private func markDisconnected() async {
         stopKeepAlive()
         writer = nil
+        await forwarding?.shutdown()
+        forwarding = nil
         await connection?.close()
         connection = nil
         client = nil

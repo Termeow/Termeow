@@ -54,6 +54,28 @@ swift test --filter ProxyJumpLiveTests
 
 Only use an authorized disposable server. These tests open direct, one-jump, and two-jump connections to that server (forwarded hops use its `127.0.0.1`), print a fixed terminal marker, and read its home directory listing. They do not write remote files or persist host-key decisions. `TERMEOW_SSH_TEST_PORT` defaults to `22`; the same port must be reachable on the server's loopback interface. Never put credentials in committed files or CI logs.
 
+## Port forwarding
+
+In the session editor, expand **Port Forwarding**, add a rule, and choose its type. Rules with **Start on connect** enabled begin after the destination terminal opens. Right-click that tab and choose **Port Forwarding…**, or click **Tunnels** in the status bar, to see listener state, connection count, and errors, and to start or stop individual rules.
+
+| Mode | Listening side | Destination reached from |
+| --- | --- | --- |
+| Local (`-L`) | This Mac | The destination SSH server |
+| Remote (`-R`) | The destination SSH server | This Mac |
+| Dynamic (`-D`) | This Mac, as a SOCKS5 CONNECT proxy | The destination SSH server; domain names are resolved there |
+
+For example, a local rule listening on `127.0.0.1:8080` and targeting `127.0.0.1:80` reaches the SSH server's loopback web service from your Mac. A remote rule listening on `127.0.0.1:9000` and targeting `127.0.0.1:3000` lets the SSH server reach a development service on your Mac. Other applications can use a dynamic rule at `127.0.0.1:1080` as a SOCKS5 proxy; select remote/proxy DNS resolution in those applications.
+
+Listeners default to `127.0.0.1`. A non-loopback bind may expose a service or an **unauthenticated** SOCKS proxy to other computers; the editor warns before you save such a rule. Listen addresses must be literal IPv4 or IPv6 addresses. Remote binding is also subject to the SSH server's `GatewayPorts`, `AllowTcpForwarding`, and destination/listener restrictions. Termeow does not change server policy, your firewall, or the system proxy.
+
+Rules belong to one terminal connection, including when it uses ProxyJump. Jump sessions' own rules and separate SFTP windows do not create listeners. Stopping a rule closes its forwarded connections but keeps the terminal open; disconnecting or closing the tab removes all its listeners and streams. A remote stop waits for cancellation acknowledgement; if that fails or takes more than five seconds, SSH closes to avoid leaving a remote listener in an unknown state. Failed rules do not prevent other rules or the terminal from working, except when an unacknowledged remote operation requires this safety shutdown.
+
+Saved edits apply after reconnecting. Opening another tab with the same listening port can cause a bind conflict: inspect the error in its forwarding panel and change the port or stop the original rule. **Copy SSH Command** includes enabled forwarding rules as `-L`, `-R`, and `-D` arguments.
+
+Current limits: 32 rules per session, 128 concurrent streams per rule, ten seconds to negotiate a forwarded connection, and fixed nonzero listen ports. This is TCP forwarding with SOCKS5 no-auth CONNECT (IPv4, IPv6, and domain destinations), not SOCKS4, SOCKS5 BIND/UDP, Unix-domain forwarding, or a standalone forwarding-only connection. Data streams use backpressure and preserve responses after an input half-close. See the [OpenSSH forwarding options](https://man.openbsd.org/ssh) and [SOCKS5 specification](https://www.rfc-editor.org/rfc/rfc1928).
+
+The opt-in `PortForwardLiveTests` suite uses the same environment as `ProxyJumpLiveTests`. It temporarily creates **loopback-only** listeners on the authorized SSH server and this Mac, transfers test data through local/remote/SOCKS5 routes (also through a jump), and verifies conflicts, independent stop/restart, pending-connection cleanup, and terminal lifecycle behavior. It makes no persistent remote configuration or file changes.
+
 ## Notes
 
 - Passwords and key passphrases are stored in the Keychain service `cn.termeow.Termeow`. Session JSON never stores secrets.

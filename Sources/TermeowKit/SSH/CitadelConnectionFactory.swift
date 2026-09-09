@@ -198,7 +198,7 @@ private final class SSHEventLoopExecutor: TaskExecutor {
 
 /// Do not lose an eager server banner between TCP connect and installation of the SSH pipeline.
 /// The first outbound SSH packet proves its handler is installed; all access is event-loop confined.
-private final class SSHInitialReadGate: ChannelOutboundHandler {
+private final class SSHInitialReadGate: ChannelOutboundHandler, @unchecked Sendable {
     typealias OutboundIn = ByteBuffer
     private var activated = false
 
@@ -226,6 +226,11 @@ actor SSHRouteLease {
     private var closed = false
     private(set) var didTimeOut = false
     private var prompts: [UUID: Task<HostKeyDecision, Never>] = [:]
+    private var closeHandlers: [@Sendable () async -> Void] = []
+
+    func onClose(_ handler: @escaping @Sendable () async -> Void) async {
+        if closed { await handler() } else { closeHandlers.append(handler) }
+    }
 
     func expire() async {
         didTimeOut = true
@@ -255,6 +260,9 @@ actor SSHRouteLease {
     func close() async {
         guard !closed else { return }
         closed = true
+        let handlers = closeHandlers
+        closeHandlers = []
+        for handler in handlers { await handler() }
         prompts.values.forEach { $0.cancel() }
         prompts = [:]
         let acquired = clients

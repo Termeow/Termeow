@@ -33,6 +33,7 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
     public var timeoutSeconds: Int
     public var term: String
     public var jumpHostID: UUID?
+    public var portForwards: [PortForwardRule]
 
     public init(
         id: UUID = UUID(),
@@ -50,7 +51,8 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         keepAliveSeconds: Int = 60,
         timeoutSeconds: Int = 30,
         term: String = "xterm-256color",
-        jumpHostID: UUID? = nil
+        jumpHostID: UUID? = nil,
+        portForwards: [PortForwardRule] = []
     ) {
         self.id = id
         self.name = name
@@ -68,6 +70,33 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         self.timeoutSeconds = timeoutSeconds
         self.term = term
         self.jumpHostID = jumpHostID
+        self.portForwards = portForwards
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, host, port, username, authMethod, privateKeyBookmark, startupCommand, groupName
+        case isFavorite, lastUsedAt, credentialID, keepAliveSeconds, timeoutSeconds, term, jumpHostID, portForwards
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        host = try values.decode(String.self, forKey: .host)
+        port = try values.decode(Int.self, forKey: .port)
+        username = try values.decode(String.self, forKey: .username)
+        authMethod = try values.decode(AuthMethod.self, forKey: .authMethod)
+        privateKeyBookmark = try values.decodeIfPresent(Data.self, forKey: .privateKeyBookmark)
+        startupCommand = try values.decode(String.self, forKey: .startupCommand)
+        groupName = try values.decode(String.self, forKey: .groupName)
+        isFavorite = try values.decode(Bool.self, forKey: .isFavorite)
+        lastUsedAt = try values.decodeIfPresent(Date.self, forKey: .lastUsedAt)
+        credentialID = try values.decode(UUID.self, forKey: .credentialID)
+        keepAliveSeconds = try values.decode(Int.self, forKey: .keepAliveSeconds)
+        timeoutSeconds = try values.decode(Int.self, forKey: .timeoutSeconds)
+        term = try values.decode(String.self, forKey: .term)
+        jumpHostID = try values.decodeIfPresent(UUID.self, forKey: .jumpHostID)
+        portForwards = try values.decodeIfPresent([PortForwardRule].self, forKey: .portForwards) ?? []
     }
 
     public var displayName: String {

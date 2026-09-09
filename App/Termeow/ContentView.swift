@@ -16,6 +16,9 @@ struct ContentView: View {
         .sheet(item: $model.editor) { editor in
             SessionEditorView(state: editor)
         }
+        .sheet(item: $model.forwardingController) { controller in
+            PortForwardingPanel(controller: controller)
+        }
         .sheet(item: hostKeyPromptBinding) { prompt in
             HostKeyView(check: prompt.check)
         }
@@ -94,6 +97,12 @@ struct StatusBarView: View {
             if let tab = model.selectedTab {
                 Text(verbatim: "\(tab.controller.profile.host):\(tab.controller.profile.port)")
                 Text(tab.controller.statusText)
+                if !tab.controller.portForwardStatuses.isEmpty {
+                    Button("Tunnels: \(tab.controller.portForwardStatuses.filter { $0.state == .listening }.count)/\(tab.controller.portForwardStatuses.count)") {
+                        model.forwardingController = tab.controller
+                    }
+                    .buttonStyle(.borderless)
+                }
                 Text(verbatim: "\(tab.controller.cols)×\(tab.controller.rows)")
                 if model.tabGroups.groups.count > 1,
                    let paneIndex = model.tabGroups.layout.paneIDs.firstIndex(of: model.tabGroups.activeGroupID) {
@@ -130,6 +139,52 @@ struct StatusBarView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(.ultraThinMaterial)
+    }
+}
+
+struct PortForwardingPanel: View {
+    @Environment(\.dismiss) private var dismiss
+    let controller: ConnectionController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Port Forwarding").font(.title2)
+            Text(verbatim: controller.profile.displayName).foregroundStyle(.secondary)
+            if controller.portForwardStatuses.isEmpty {
+                Text("No rules configured. Edit the saved session to add forwarding rules, then reconnect.")
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(controller.portForwardStatuses) { status in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(verbatim: status.rule.kind.title).font(.headline)
+                                Text(verbatim: status.rule.summary).textSelection(.enabled)
+                                HStack {
+                                    Text(verbatim: status.state.title)
+                                    Spacer()
+                                    Text("Connections: \(status.connections)")
+                                    if status.state == .listening || status.state == .starting {
+                                        Button("Stop") { controller.stopPortForward(status.id) }
+                                    } else {
+                                        Button("Start") { controller.startPortForward(status.id) }
+                                            .disabled(controller.state != .connected || status.state == .stopping)
+                                    }
+                                }
+                                if let error = status.lastError {
+                                    Text(verbatim: error).font(.caption).foregroundStyle(.orange)
+                                }
+                                Divider()
+                            }
+                        }
+                    }
+                }
+                Text("Stopping a rule closes its forwarded connections, but keeps the terminal open. If a remote cancellation is not acknowledged within five seconds, SSH is closed for safety.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
+        }
+        .padding(24)
+        .frame(width: 580, height: 400)
     }
 }
 
