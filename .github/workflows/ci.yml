@@ -12,6 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Swift tests
+        env:
+          TERMEOW_AGENT_INTEGRATION_TESTS: "1"
         run: swift test
       - name: Xcode build and test
         run: |

@@ -95,3 +95,21 @@ private func routeProfile(_ name: String, via: SessionProfile? = nil) -> Session
 func isolatedRouteHostKeyStore() -> HostKeyStore {
     HostKeyStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("termeow-route-\(UUID()).json"))
 }
+
+@Test func closingRouteDiscardsLateHostKeyApproval() async throws {
+    let lease = SSHRouteLease()
+    let entered = AgentTestRequests()
+    let record = HostKeyRecord(host: "example.test", port: 22, algorithm: "ssh-ed25519", fingerprintSHA256: "SHA256:test", publicKeyBase64: "test")
+    let task = Task {
+        await lease.requestPrompt(.unknown(record)) { _ in
+            entered.append(Data([1]))
+            // Simulate a UI decision already queued when cancellation arrives.
+            try? await Task.sleep(for: .seconds(30))
+            return .trustAndSave
+        }
+    }
+    do { try await entered.waitForCount(1) }
+    catch { await lease.close(); _ = await task.value; throw error }
+    await lease.close()
+    #expect(await task.value == .cancel)
+}

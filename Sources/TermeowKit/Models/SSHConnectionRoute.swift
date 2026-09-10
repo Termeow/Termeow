@@ -11,7 +11,7 @@ public enum SSHRouteError: Error, Equatable, Sendable, LocalizedError {
         case .missingJumpHost: "A saved jump host is missing. Choose another jump host or explicitly select Direct Connection."
         case .cycle: "The jump-host route contains a cycle. A session cannot depend on itself."
         case .tooManyHops: "A route can contain at most eight jump hosts."
-        case .invalidProfile: "A session in the route has an invalid host, username, port, or timeout."
+        case .invalidProfile: "A session in the route has an invalid host, username, port, timeout, or agent identity."
         }
     }
 }

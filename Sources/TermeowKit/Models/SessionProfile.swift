@@ -3,6 +3,7 @@ import Foundation
 public enum AuthMethod: String, Codable, Sendable, CaseIterable, Identifiable {
     case password
     case privateKey
+    case agent
 
     public var id: String { rawValue }
 
@@ -10,6 +11,7 @@ public enum AuthMethod: String, Codable, Sendable, CaseIterable, Identifiable {
         switch self {
         case .password: NSLocalizedString("Password", bundle: .module, comment: "SSH authentication method")
         case .privateKey: NSLocalizedString("Private Key", bundle: .module, comment: "SSH authentication method")
+        case .agent: "SSH Agent"
         }
     }
 }
@@ -34,6 +36,7 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
     public var term: String
     public var jumpHostID: UUID?
     public var portForwards: [PortForwardRule]
+    public var agent: SSHAgentConfiguration
 
     public init(
         id: UUID = UUID(),
@@ -52,7 +55,8 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         timeoutSeconds: Int = 30,
         term: String = "xterm-256color",
         jumpHostID: UUID? = nil,
-        portForwards: [PortForwardRule] = []
+        portForwards: [PortForwardRule] = [],
+        agent: SSHAgentConfiguration = SSHAgentConfiguration()
     ) {
         self.id = id
         self.name = name
@@ -71,11 +75,13 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         self.term = term
         self.jumpHostID = jumpHostID
         self.portForwards = portForwards
+        self.agent = agent
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, host, port, username, authMethod, privateKeyBookmark, startupCommand, groupName
         case isFavorite, lastUsedAt, credentialID, keepAliveSeconds, timeoutSeconds, term, jumpHostID, portForwards
+        case agent
     }
 
     public init(from decoder: Decoder) throws {
@@ -97,6 +103,7 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         term = try values.decode(String.self, forKey: .term)
         jumpHostID = try values.decodeIfPresent(UUID.self, forKey: .jumpHostID)
         portForwards = try values.decodeIfPresent([PortForwardRule].self, forKey: .portForwards) ?? []
+        agent = try values.decodeIfPresent(SSHAgentConfiguration.self, forKey: .agent) ?? SSHAgentConfiguration()
     }
 
     public var displayName: String {
@@ -109,5 +116,6 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
             && Self.validPortRange.contains(port)
             && timeoutSeconds > 0
             && keepAliveSeconds >= 0
+            && (authMethod != .agent || agent.validationError == nil)
     }
 }

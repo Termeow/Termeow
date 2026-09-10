@@ -154,7 +154,7 @@ private actor ForwardStatusCapture {
     func update(_ values: [PortForwardStatus]) { sawListening = sawListening || values.contains { $0.state == .listening } }
 }
 
-private func waitUntilListening(_ manager: SSHPortForwarding) async throws {
+func waitUntilListening(_ manager: SSHPortForwarding) async throws {
     let deadline = ContinuousClock.now.advanced(by: .seconds(10))
     while ContinuousClock.now < deadline {
         let statuses = await manager.snapshot
@@ -168,21 +168,21 @@ private func waitUntilListening(_ manager: SSHPortForwarding) async throws {
     throw SSHError.timeout
 }
 
-private func unusedPort() async throws -> Int {
+func unusedPort() async throws -> Int {
     let listener = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton).bind(host: "127.0.0.1", port: 0).get()
     let port = try #require(listener.localAddress?.port)
     try await listener.close()
     return port
 }
 
-private func echoServer() async throws -> Channel {
+func echoServer() async throws -> Channel {
     try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
         .childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
         .childChannelInitializer { $0.pipeline.addHandler(EchoAfterEOF()) }
         .bind(host: "127.0.0.1", port: 0).get()
 }
 
-private func exchange(port: Int, bytes: [UInt8]) async throws -> [UInt8] {
+func exchange(port: Int, bytes: [UInt8]) async throws -> [UInt8] {
     let lifetime = ForwardingLifetime()
     defer { lifetime.close() }
     let deadline = Task {

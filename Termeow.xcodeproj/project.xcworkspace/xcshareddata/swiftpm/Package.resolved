@@ -1,5 +1,5 @@
 {
-  "originHash" : "707d77f157b714c18444bb23b5f24c1ed0aafd22d67acff98ecc0327adea7680",
+  "originHash" : "a2205130922c92ba68a091cfa309e9894d15dd3b70a44060a9bcf6b7ab299a77",
   "pins" : [
     {
       "identity" : "bigint",
@@ -8,15 +8,6 @@
       "state" : {
         "revision" : "e07e00fa1fd435143a2dcf8b7eec9a7710b2fdfe",
         "version" : "5.7.0"
-      }
-    },
-    {
-      "identity" : "citadel",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/orlandos-nl/Citadel.git",
-      "state" : {
-        "revision" : "ae8562f895de06ccb86fdb1cbb65fd99c8976e12",
-        "version" : "0.12.1"
       }
     },
     {

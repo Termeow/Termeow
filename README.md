@@ -32,6 +32,12 @@ xcodebuild -project Termeow.xcodeproj -scheme Termeow -destination 'platform=mac
 
 Land work through pull requests into `develop`. Do not push `develop` or `main` directly.
 
+The build uses a [runtime-only Citadel compatibility copy](Vendor/Citadel/README.md) with targeted handshake, channel-setup, and inbound-channel fixes. It preserves remote forwarding with agent authentication, honors per-session approval timeouts, and waits for actual PTY/shell/subsystem acknowledgements. Clean builds require no edits to SwiftPM caches; other dependency versions remain pinned in `Package.resolved`.
+
+The session timeout applies to each SSH handshake and, separately, to destination setup after authentication. Terminal setup must receive both PTY and shell acknowledgements before reporting connected or sending a startup command. SFTP setup has one budget covering channel creation, subsystem acknowledgement, version negotiation, and the initial home-directory lookup. Timeout or cancellation closes an incomplete connection; setup timers do not limit the lifetime of an established terminal or file transfer.
+
+`swift test --filter SSHChannelSetupTests` runs isolated loopback protocol fixtures covering missing/rejected/delayed replies, disconnects, cancellation, immediate output, and reconnects. These tests do not start a shell or use external credentials.
+
 A daily job (00:00 Asia/Shanghai) publishes an ad-hoc signed zip on the [nightly pre-release](https://github.com/Termeow/Termeow/releases/tag/nightly). You can also run **Develop snapshot** by hand. That is a trial build, not a SemVer release, and it is not notarized. Unzip, then right-click `Termeow.app` and choose Open.
 
 ## Jump hosts (ProxyJump)
@@ -46,7 +52,7 @@ Cycles, missing jump sessions, and invalid connection settings block the connect
 
 ### Opt-in integration tests
 
-The regular `swift test` suite validates routes and backward-compatible session storage without a server. To exercise real PTY output, SFTP listing, rejection, cancellation, and timeout behavior, supply `TERMEOW_SSH_TEST_HOST`, `TERMEOW_SSH_TEST_USER`, and `TERMEOW_SSH_TEST_PASSWORD` through your test environment, then run:
+The regular `swift test` suite validates routes, backward-compatible session storage, and setup deadlines without an external server. To exercise real PTY output, SFTP listing, rejection, cancellation, and timeout behavior against a test server, supply `TERMEOW_SSH_TEST_HOST`, `TERMEOW_SSH_TEST_USER`, and `TERMEOW_SSH_TEST_PASSWORD` through your test environment, then run:
 
 ```bash
 swift test --filter ProxyJumpLiveTests
@@ -76,8 +82,30 @@ Current limits: 32 rules per session, 128 concurrent streams per rule, ten secon
 
 The opt-in `PortForwardLiveTests` suite uses the same environment as `ProxyJumpLiveTests`. It temporarily creates **loopback-only** listeners on the authorized SSH server and this Mac, transfers test data through local/remote/SOCKS5 routes (also through a jump), and verifies conflicts, independent stop/restart, pending-connection cleanup, and terminal lifecycle behavior. It makes no persistent remote configuration or file changes.
 
+## SSH Agent authentication
+
+Choose **SSH Agent** under **Authentication** in a session's editor. Leave **Agent Socket** empty to use the app process's `SSH_AUTH_SOCK`, or enter the Unix socket path provided by OpenSSH, 1Password, or Secretive (`~/...` is accepted). Click **Load Agent Keys**, compare the SHA-256 fingerprint, explicitly select a public key, and save. Load/unlock private keys in the agent itself; Termeow never imports them. **Copy Public Key** copies the public OpenSSH key, suitable for installing on a server you administer.
+
+Supported identities are Ed25519, RSA (2048–8192 bits), and ECDSA P-256/P-384/P-521. RSA uses `rsa-sha2-512` by default; select **Use RSA SHA-256 instead of SHA-512** for a server that requires `rsa-sha2-256`. There is no automatic retry or RSA/SHA-1 fallback. Certificate and FIDO/security-key entries are shown as unsupported and cannot be selected.
+
+Only the selected public key is offered, once, even if the agent contains many keys. Saved sessions keep the socket setting and public key, not a private key, passphrase, or agent unlock secret. Removing a key from the agent causes login to fail rather than trying another key. Changing the socket clears the selection. An empty socket setting is resolved again on each connection, so it can follow OpenSSH's socket after a restart; a GUI app does not inherit later changes made in a shell. For a third-party agent, use the socket path from that app's setup instructions.
+
+Terminal and SFTP connections support agent authentication, including each hop of a mixed password/private-key/agent jump route. Local, remote, and SOCKS forwarding remain available on agent-authenticated terminal routes. Host keys are verified before an authentication signature is requested. Approve requests in the agent within the session timeout (signing is capped at 120 seconds; key listing at ten seconds). Closing/cancelling a connection interrupts a pending request, discards late host-key approval, and a waiting approval does not block unrelated terminal routes. As SFTP currently opens a separate SSH route, it can trigger a separate approval.
+
+The client implements the public-identity and sign-request operations in the [SSH Agent protocol](https://www.rfc-editor.org/rfc/rfc9987.html). It checks the Unix socket peer's user ID, caps response sizes and key counts, and verifies returned signatures with the selected public key before sending them to SSH. It does not add/delete keys, unlock agents, run shell commands to discover agents, or forward an agent socket to a server. OpenSSH destination-constrained identities require the `session-bind@openssh.com` extension and are not supported; an agent rejection is never bypassed. See the official [1Password agent instructions](https://www.1password.dev/ssh/agent) and [Secretive setup](https://github.com/maxgoedjen/secretive) for their socket and approval settings. Their native approval dialogs have not been validated by the automated fixtures.
+
+**Copy SSH Command** declines routes containing an agent identity: a generic `ssh -J` command cannot preserve Termeow's selected key/socket per hop. To use such a route outside Termeow, configure OpenSSH's `IdentityAgent`, a public `IdentityFile`, and `IdentitiesOnly yes` for each host. This does not change how password/private-key routes are copied.
+
+### Agent integration tests
+
+```bash
+TERMEOW_AGENT_INTEGRATION_TESTS=1 swift test --filter SSHAgentIntegrationTests
+```
+
+These opt-in tests use macOS's `ssh-agent`, `ssh-add`, `ssh-keygen`, and `sshd` with generated ephemeral keys, a private temporary socket, and a loopback-only server. They never modify the user's normal agent, SSH configuration, or `authorized_keys`. They verify all supported signature algorithms against OpenSSH, PTY output, SFTP listing, multi-hop agent/mixed-auth routes, all forwarding modes with actual data transfer, rejected host keys, missing/refused keys, concurrent connections, terminal/SFTP cancellation, and approvals lasting longer than ten seconds on direct and jump routes. The fixture disables `StrictModes` only for its own temporary `authorized_keys` underneath the shared `/tmp` parent; the private fixture directory remains mode `0700`. CI opts into these tests. Ordinary `swift test` still runs the protocol/validation tests without starting OpenSSH processes.
+
 ## Notes
 
 - Passwords and key passphrases are stored in the Keychain service `cn.termeow.Termeow`. Session JSON never stores secrets.
-- Passwords, Ed25519 keys, and unencrypted RSA PEM keys are supported. ECDSA user keys, encrypted PEM keys, and some RSA/OpenSSH compatibility combinations remain unsupported.
+- Passwords, Ed25519 private-key files, unencrypted RSA PEM files, and the SSH Agent identities above are supported. ECDSA private-key files, encrypted PEM files, and some RSA/OpenSSH file-format combinations remain unsupported.
 - App Sandbox is off in this first slice so security-scoped key bookmarks from `NSOpenPanel` can work.

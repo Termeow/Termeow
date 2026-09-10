@@ -12,7 +12,8 @@ let package = Package(
         .library(name: "TermeowKit", targets: ["TermeowKit"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.12.1"),
+        // Keep the agent handshake/forwarding fixes reproducible in clean builds.
+        .package(path: "Vendor/Citadel"),
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.19.0"),
     ],
     targets: [

@@ -37,8 +37,10 @@ public actor CitadelSFTPService {
     }
 
     public func connect() async throws -> String {
-        if let sftpClient, sftpClient.isActive {
-            return try await sftpClient.getRealPath(atPath: ".")
+        if let sftpClient, sftpClient.isActive, let connection {
+            return try await withInitializationTimeout(connection: connection) {
+                try await sftpClient.getRealPath(atPath: ".")
+            }
         }
 
         await disconnect()
@@ -59,8 +61,11 @@ public actor CitadelSFTPService {
             return try await withTaskCancellationHandler {
                 guard connectionID == id else { throw CancellationError() }
                 connection = ssh
-                let sftp = try await ssh.client.openSFTP()
-                let path = try await sftp.getRealPath(atPath: ".")
+                let timeout = TimeAmount.seconds(Int64(max(profile.timeoutSeconds, 1)))
+                let (sftp, path) = try await withInitializationTimeout(connection: ssh) {
+                    let sftp = try await ssh.client.openSFTP(setupTimeout: timeout)
+                    return (sftp, try await sftp.getRealPath(atPath: "."))
+                }
                 try Task.checkCancellation()
                 guard connectionID == id else { throw CancellationError() }
                 connection = ssh
@@ -70,9 +75,41 @@ public actor CitadelSFTPService {
             } onCancel: { Task { await ssh.close() } }
         } catch {
             await ssh.close()
+            let cancelled = Task.isCancelled || connectionID != id
             if connectionID == id { connection = nil; connectionID = nil }
+            if cancelled { throw CancellationError() }
             throw error
         }
+    }
+
+    /// A single post-authentication budget includes the first directory lookup.
+    /// Close the route before leaving the task group so pending NIO futures unwind.
+    private func withInitializationTimeout<Value: Sendable>(
+        connection: CitadelConnection,
+        operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let timeout = max(profile.timeoutSeconds, 1)
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withThrowingTaskGroup(of: Value.self) { group in
+                group.addTask { try await operation() }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(timeout))
+                    throw SSHError.timeout
+                }
+                defer { group.cancelAll() }
+                do {
+                    let value = try await group.next()!
+                    try Task.checkCancellation()
+                    return value
+                } catch {
+                    await connection.close()
+                    if Task.isCancelled { throw CancellationError() }
+                    if CitadelConnectionFactory.mapError(error) == .timeout { throw SSHError.timeout }
+                    throw error
+                }
+            }
+        } onCancel: { Task { await connection.close() } }
     }
 
     public func disconnect() async {

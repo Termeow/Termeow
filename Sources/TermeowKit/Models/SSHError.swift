@@ -12,6 +12,7 @@ public enum SSHError: Error, Equatable, Sendable, LocalizedError {
     case invalidPrivateKey
     case missingCredential
     case invalidJumpRoute
+    case sshAgent(SSHAgentError)
     indirect case jumpHostFailed(String, SSHError)
 
     public var errorDescription: String? { userMessage }
@@ -40,6 +41,8 @@ public enum SSHError: Error, Equatable, Sendable, LocalizedError {
             NSLocalizedString("A password or key is required.", bundle: .module, comment: "SSH error")
         case .invalidJumpRoute:
             "The jump-host route is invalid. Check its saved sessions before connecting."
+        case .sshAgent(let error):
+            error.localizedDescription
         case .jumpHostFailed(let name, let reason):
             "Jump host \(name): \(reason.userMessage)"
         }
