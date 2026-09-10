@@ -38,7 +38,7 @@ enum CitadelConnectionFactory {
                 for (index, setting) in settings.enumerated() {
                     try Task.checkCancellation()
                     do {
-                        let client = try await connectHop(setting, previous: previous, lease: lease, usesAgent: agentGroup != nil)
+                        let client = try await connectHop(setting, previous: previous, lease: lease)
                         try await lease.add(client)
                         previous = client
                     } catch {
@@ -64,26 +64,11 @@ enum CitadelConnectionFactory {
         }
     }
 
-    private static func connectHop(_ settings: SSHClientSettings, previous: SSHClientBox?, lease: SSHRouteLease, usesAgent: Bool) async throws -> SSHClientBox {
+    private static func connectHop(_ settings: SSHClientSettings, previous: SSHClientBox?, lease: SSHRouteLease) async throws -> SSHClientBox {
         try await withThrowingTaskGroup(of: SSHClientBox.self) { group in
             group.addTask {
                 let client: SSHClient
-                if usesAgent {
-                    let channel: Channel
-                    if let previous {
-                        channel = try await previous.value.createDirectTCPIPChannel(
-                            using: SSHChannelType.DirectTCPIP(targetHost: settings.host, targetPort: settings.port,
-                                                             originatorAddress: SocketAddress(ipAddress: "127.0.0.1", port: 0))
-                        ) { channel in channel.setOption(ChannelOptions.autoRead, value: false) }
-                    } else {
-                        channel = try await ClientBootstrap(group: settings.group)
-                            .channelOption(ChannelOptions.autoRead, value: false)
-                            .connectTimeout(settings.connectTimeout)
-                            .connect(host: settings.host, port: settings.port).get()
-                        try await lease.setTransport(channel)
-                    }
-                    client = try await authenticateAgentRoute(on: channel, settings: settings)
-                } else if let previous {
+                if let previous {
                     client = try await previous.value.jump(to: settings)
                 } else {
                     let channel = try await ClientBootstrap(group: settings.group)
@@ -114,32 +99,6 @@ enum CitadelConnectionFactory {
             defer { group.cancelAll() }
             guard let result = try await group.next() else { throw SSHError.connectionFailed }
             return result
-        }
-    }
-
-    private static func authenticateAgentRoute(on channel: Channel, settings: SSHClientSettings) async throws -> SSHClient {
-        do {
-            return try await withTaskExecutorPreference(SSHEventLoopExecutor(channel.eventLoop)) {
-                // This Citadel overload installs SSH without waiting for its fixed ten-second
-                // handshake timer. Our observer honors the session deadline and socket close.
-                // Keep reads paused until the observer is between SSH and Citadel's event sink.
-                let client = try await SSHClient.connect(
-                    on: channel, authenticationMethod: settings.authenticationMethod(),
-                    hostKeyValidator: settings.hostKeyValidator, algorithms: settings.algorithms,
-                    protocolOptions: settings.protocolOptions
-                )
-                let ssh = try channel.pipeline.syncOperations.handler(type: NIOSSHHandler.self)
-                let observer = SSHAgentAuthenticationObserver(eventLoop: channel.eventLoop)
-                try channel.pipeline.syncOperations.addHandler(observer, position: .after(ssh))
-                try await channel.setOption(ChannelOptions.autoRead, value: true).get()
-                // NIOSSH child channels change the autoRead flag without initiating a read.
-                channel.read()
-                try await observer.authenticated.get()
-                return client
-            }
-        } catch {
-            try? await channel.close()
-            throw error
         }
     }
 
@@ -245,30 +204,6 @@ private final class SSHEventLoopExecutor: TaskExecutor {
     }
 }
 
-private final class SSHAgentAuthenticationObserver: ChannelInboundHandler, @unchecked Sendable {
-    typealias InboundIn = Any
-    private let promise: EventLoopPromise<Void>
-    private var complete = false
-    var authenticated: EventLoopFuture<Void> { promise.futureResult }
-    init(eventLoop: any EventLoop) { promise = eventLoop.makePromise(of: Void.self) }
-
-    func userInboundEventTriggered(context: ChannelHandlerContext, event: Any) {
-        if event is UserAuthSuccessEvent, !complete { complete = true; promise.succeed(()) }
-        context.fireUserInboundEventTriggered(event)
-    }
-    func errorCaught(context: ChannelHandlerContext, error: Error) {
-        if !complete { complete = true; promise.fail(error) }
-        context.fireErrorCaught(error)
-    }
-    func channelInactive(context: ChannelHandlerContext) {
-        if !complete { complete = true; promise.fail(SSHError.connectionClosed) }
-        context.fireChannelInactive()
-    }
-    func handlerRemoved(context: ChannelHandlerContext) {
-        if !complete { complete = true; promise.fail(SSHError.connectionClosed) }
-    }
-}
-
 /// Do not lose an eager server banner between TCP connect and installation of the SSH pipeline.
 /// The first outbound SSH packet proves its handler is installed; all access is event-loop confined.
 private final class SSHInitialReadGate: ChannelOutboundHandler, @unchecked Sendable {
@@ -330,7 +265,11 @@ actor SSHRouteLease {
         let task = Task { await prompt(check) }
         prompts[id] = task
         defer { prompts.removeValue(forKey: id) }
-        return await task.value
+        let decision = await task.value
+        // A UI decision may already be queued when the route is closed or times out.
+        // Never persist trust or resume authentication from that stale approval.
+        guard !closed, !Task.isCancelled, !task.isCancelled else { return .cancel }
+        return decision
     }
 
     func setTransport(_ channel: Channel) async throws {

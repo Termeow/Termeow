@@ -8,7 +8,7 @@ import Testing
 @testable import TermeowKit
 
 /// Opt-in, entirely local fixtures. Never read or modify the user's real SSH agent or authorized_keys.
-@Suite(.serialized, .timeLimit(.minutes(1)), .enabled(if: ProcessInfo.processInfo.environment["TERMEOW_AGENT_INTEGRATION_TESTS"] == "1"))
+@Suite(.serialized, .timeLimit(.minutes(2)), .enabled(if: ProcessInfo.processInfo.environment["TERMEOW_AGENT_INTEGRATION_TESTS"] == "1"))
 struct SSHAgentIntegrationTests {
     @Test func realOpenSSHAgentSignsEverySupportedAlgorithm() async throws {
         let fixture = try await Task.detached { try OpenSSHAgentFixture() }.value
@@ -130,6 +130,81 @@ struct SSHAgentIntegrationTests {
         }
     }
 
+    enum ForwardingRoute: CaseIterable { case directAgent, agentJump, mixedJump, directPrivateKey }
+
+    @Test(arguments: ForwardingRoute.allCases) func agentRoutesPreserveAllPortForwardingModes(route: ForwardingRoute) async throws {
+        let fixture = try await Task.detached { try OpenSSHAgentFixture() }.value
+        defer { fixture.stop() }
+        let port = try await fixture.startServer()
+        let identities = try await SSHAgentClient.identities(socketPath: fixture.socketPath)
+        let outer = fixture.profile(identity: try #require(identities.first), port: port)
+        var target = fixture.profile(identity: try #require(identities.last), port: port)
+        let jump = route == .agentJump || route == .mixedJump
+        if jump { target.jumpHostID = outer.id }
+        if route == .mixedJump || route == .directPrivateKey {
+            target.authMethod = .privateKey
+            target.privateKeyBookmark = try fixture.directory.appendingPathComponent("ed25519").bookmarkData(options: [.withSecurityScope])
+        }
+        let echo = try await echoServer()
+        defer { echo.close(promise: nil) }
+        let remote = PortForwardRule(kind: .remote, bindPort: try await unusedPort(), destinationPort: try #require(echo.localAddress?.port))
+        var local = PortForwardRule(bindPort: try await unusedPort(), destinationPort: remote.bindPort)
+        while local.bindPort == remote.bindPort { local.bindPort = try await unusedPort() }
+        var dynamic = PortForwardRule(kind: .dynamic, bindPort: try await unusedPort())
+        while [local.bindPort, remote.bindPort].contains(dynamic.bindPort) { dynamic.bindPort = try await unusedPort() }
+        let connection = try await CitadelConnectionFactory.connect(
+            profile: target, secret: "", hostKeyStore: isolatedRouteHostKeyStore(),
+            jumpHosts: jump ? [SSHConnectionHop(profile: outer, secret: "")] : []
+        ) { _ in .connectOnce }
+        let manager = SSHPortForwarding(connection: connection, rules: [remote, local, dynamic]) { _ in }
+        do {
+            await manager.startEnabled()
+            try await waitUntilListening(manager)
+            let payload = Array(repeating: UInt8(65), count: 131_072)
+            #expect(try await exchange(port: local.bindPort, bytes: payload) == payload)
+            let proxy: [UInt8] = [5, 1, 0, 5, 1, 0, 1, 127, 0, 0, 1,
+                                 UInt8(remote.bindPort >> 8), UInt8(remote.bindPort & 255)]
+            let reply = try await exchange(port: dynamic.bindPort, bytes: proxy + [42])
+            #expect(Array(reply.prefix(4)) == [5, 0, 5, 0])
+            #expect(Array(reply.dropFirst(12)) == [42])
+            await manager.stop(remote.id)
+            #expect(connection.client.isConnected)
+            await manager.start(remote.id)
+            try await waitUntilListening(manager)
+            #expect(try await exchange(port: local.bindPort, bytes: [1, 2, 3]) == [1, 2, 3])
+            await manager.shutdown()
+            await connection.close()
+            try await echo.close()
+        } catch {
+            await manager.shutdown()
+            await connection.close()
+            try? await echo.close()
+            throw error
+        }
+    }
+
+    @Test(arguments: [1, 2]) func serverRejectionDoesNotTryAnotherLoadedAgentKey(maxAuthTries: Int) async throws {
+        let fixture = try await Task.detached { try OpenSSHAgentFixture() }.value
+        defer { fixture.stop() }
+        let port = try await fixture.startServer(authorizedKeys: ["rsa", "p256", "p384", "p521"], maxAuthTries: maxAuthTries)
+        let identity = try #require(try await SSHAgentClient.identities(socketPath: fixture.socketPath).first { $0.algorithm == "ssh-ed25519" })
+        try await withMockAgent(reply: { request in
+            try? agentFrame(SSHAgentAccess().request(path: fixture.socketPath, payload: request, timeout: 2))
+        }) { agent in
+            var profile = fixture.profile(identity: identity, port: port)
+            profile.agent.socketPath = agent.path
+            let start = ContinuousClock.now
+            // With no attempts left, OpenSSH sends DISCONNECT instead of USERAUTH_FAILURE.
+            // NIOSSH reports that as a closed channel; neither response may trigger fallback.
+            let expected: SSHError = maxAuthTries == 1 ? .connectionClosed : .authenticationFailed
+            await #expect(throws: expected) {
+                _ = try await CitadelConnectionFactory.connect(profile: profile, secret: "", hostKeyStore: isolatedRouteHostKeyStore()) { _ in .connectOnce }
+            }
+            #expect(agent.requests.values.count == 1)
+            #expect(start.duration(to: .now) < .seconds(3))
+        }
+    }
+
     @Test func rejectsHostKeyBeforeRequestingAnyAgentSignature() async throws {
         let fixture = try await Task.detached { try OpenSSHAgentFixture() }.value
         defer { fixture.stop() }
@@ -182,7 +257,7 @@ struct SSHAgentIntegrationTests {
         }
     }
 
-    @Test func approvalLongerThanCitadelDefaultTimeoutCanStillSucceed() async throws {
+    @Test(arguments: [false, true]) func approvalLongerThanCitadelDefaultTimeoutCanStillSucceed(jump: Bool) async throws {
         let fixture = try await Task.detached { try OpenSSHAgentFixture() }.value
         defer { fixture.stop() }
         let port = try await fixture.startServer()
@@ -192,12 +267,78 @@ struct SSHAgentIntegrationTests {
             Thread.sleep(forTimeInterval: 11)
             return try? agentFrame(SSHAgentAccess().request(path: fixture.socketPath, payload: payload, timeout: 2))
         }) { agent in
+            let outer = fixture.profile(identity: identity, port: port)
             var profile = fixture.profile(identity: identity, port: port)
             profile.timeoutSeconds = 15; profile.agent.socketPath = agent.path
-            let connection = try await CitadelConnectionFactory.connect(profile: profile, secret: "", hostKeyStore: isolatedRouteHostKeyStore()) { _ in .connectOnce }
+            if jump { profile.jumpHostID = outer.id }
+            let connection = try await CitadelConnectionFactory.connect(
+                profile: profile, secret: "", hostKeyStore: isolatedRouteHostKeyStore(),
+                jumpHosts: jump ? [SSHConnectionHop(profile: outer, secret: "")] : []
+            ) { _ in .connectOnce }
             #expect(connection.client.isConnected)
             await connection.close()
             #expect(agent.requests.values.count == 1)
+        }
+    }
+
+    @Test func multipleAgentJumpsUsePinnedKeysAndIdentifyTheFailingHop() async throws {
+        let fixture = try await Task.detached { try OpenSSHAgentFixture() }.value
+        defer { fixture.stop() }
+        let port = try await fixture.startServer()
+        let keys = try await SSHAgentClient.identities(socketPath: fixture.socketPath)
+        try #require(keys.count >= 3)
+        let outer = fixture.profile(identity: keys[0], port: port)
+        var inner = fixture.profile(identity: keys[1], port: port)
+        inner.name = "Inner agent"; inner.jumpHostID = outer.id
+        var target = fixture.profile(identity: keys[2], port: port)
+        target.jumpHostID = inner.id
+        let connection = try await CitadelConnectionFactory.connect(
+            profile: target, secret: "", hostKeyStore: isolatedRouteHostKeyStore(),
+            jumpHosts: [outer, inner].map { SSHConnectionHop(profile: $0, secret: "") }
+        ) { _ in .connectOnce }
+        do {
+            #expect(String(buffer: try await connection.client.executeCommand("printf AGENT_CHAIN_READY", maxResponseSize: 1024)) == "AGENT_CHAIN_READY")
+            await connection.close()
+        } catch { await connection.close(); throw error }
+        try await withMockAgent(reply: { _ in agentFrame(Data([5])) }) { agent in
+            var refused = inner; refused.agent.socketPath = agent.path
+            await #expect(throws: SSHError.jumpHostFailed("Inner agent", .sshAgent(.refused))) {
+                _ = try await CitadelConnectionFactory.connect(
+                    profile: target, secret: "", hostKeyStore: isolatedRouteHostKeyStore(),
+                    jumpHosts: [outer, refused].map { SSHConnectionHop(profile: $0, secret: "") }
+                ) { _ in .connectOnce }
+            }
+            #expect(agent.requests.values.count == 1)
+        }
+    }
+
+    @Test func terminalAndSFTPCancelPendingAgentApproval() async throws {
+        let fixture = try await Task.detached { try OpenSSHAgentFixture() }.value
+        defer { fixture.stop() }
+        let port = try await fixture.startServer()
+        let identity = try #require(try await SSHAgentClient.identities(socketPath: fixture.socketPath).first)
+        try await withMockAgent(reply: { _ in nil }) { agent in
+            var profile = fixture.profile(identity: identity, port: port)
+            profile.agent.socketPath = agent.path
+            let session = CitadelSSHSession(profile: profile, secret: "", hostKeyStore: isolatedRouteHostKeyStore()) { _ in .connectOnce }
+            let terminalTask = Task { try await session.connect() }
+            do { try await agent.requests.waitForCount(1) }
+            catch { await session.disconnect(); _ = try? await terminalTask.value; throw error }
+            let terminalStart = ContinuousClock.now
+            await session.disconnect()
+            await #expect(throws: CancellationError.self) { try await terminalTask.value }
+            #expect(session.state == .disconnected)
+            #expect(terminalStart.duration(to: .now) < .seconds(2))
+
+            let sftp = CitadelSFTPService(profile: profile, secret: "", hostKeyStore: isolatedRouteHostKeyStore()) { _ in .connectOnce }
+            let sftpTask = Task { try await sftp.connect() }
+            do { try await agent.requests.waitForCount(2) }
+            catch { await sftp.disconnect(); _ = try? await sftpTask.value; throw error }
+            let sftpStart = ContinuousClock.now
+            await sftp.disconnect()
+            await #expect(throws: CancellationError.self) { _ = try await sftpTask.value }
+            await #expect(throws: SFTPServiceError.self) { _ = try await sftp.listDirectory(at: ".") }
+            #expect(sftpStart.duration(to: .now) < .seconds(2))
         }
     }
 
@@ -258,13 +399,13 @@ private final class OpenSSHAgentFixture: @unchecked Sendable {
                        keepAliveSeconds: 0, timeoutSeconds: 5, agent: SSHAgentConfiguration(socketPath: socketPath, publicKey: identity.blob))
     }
 
-    func startServer() async throws -> Int {
+    func startServer(authorizedKeys: [String] = ["ed25519", "rsa", "p256", "p384", "p521"], maxAuthTries: Int = 1) async throws -> Int {
         let probe = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton).bind(host: "127.0.0.1", port: 0).get()
         let port = try #require(probe.localAddress?.port)
         try await probe.close()
         let hostKey = directory.appendingPathComponent("host").path
         try run("/usr/bin/ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", hostKey])
-        let authorized = try ["ed25519", "rsa", "p256", "p384", "p521"].map {
+        let authorized = try authorizedKeys.map {
             try String(contentsOf: directory.appendingPathComponent("\($0).pub"), encoding: .utf8)
         }.joined(separator: "\n")
         let keysURL = directory.appendingPathComponent("authorized_keys")
@@ -282,7 +423,7 @@ private final class OpenSSHAgentFixture: @unchecked Sendable {
         KbdInteractiveAuthentication no
         PubkeyAuthentication yes
         AllowTcpForwarding yes
-        MaxAuthTries 1
+        MaxAuthTries \(maxAuthTries)
         LogLevel ERROR
         Subsystem sftp internal-sftp
         """

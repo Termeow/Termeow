@@ -10,3 +10,8 @@ updates:
     target-branch: develop
     schedule:
       interval: weekly
+  - package-ecosystem: swift
+    directory: /Vendor/Citadel
+    target-branch: develop
+    schedule:
+      interval: weekly
