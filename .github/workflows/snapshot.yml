@@ -49,7 +49,7 @@ jobs:
           lipo -info "$app/Contents/MacOS/Termeow"
           codesign -dv --verbose=2 "$app" || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: termeow-develop
           path: ${{ steps.zip.outputs.path }}
