@@ -10,7 +10,7 @@ let package = Package(
         .package(url: "https://github.com/Wellz26/swift-nio-ssh.git", "0.3.4" ..< "0.4.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.81.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
-        .package(url: "https://github.com/attaswift/BigInt.git", from: "5.2.0"),
+        .package(url: "https://github.com/attaswift/BigInt.git", from: "6.0.1"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.12.3"),
     ],
     targets: [
