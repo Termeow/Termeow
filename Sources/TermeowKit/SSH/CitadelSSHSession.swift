@@ -93,7 +93,7 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
                 ptyTask = Task { [weak self] in
                     guard let self else { completion.finish(.failure(CancellationError())); return }
                     do {
-                        try await client.withPTY(request) { inbound, outbound in
+                        try await client.withPTY(request, setupTimeout: .seconds(Int64(max(self.profile.timeoutSeconds, 1)))) { inbound, outbound in
                             guard !Task.isCancelled else { throw CancellationError() }
                             self.attach(writer: outbound, completion: completion)
                             if !startup.isEmpty {
@@ -143,7 +143,8 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
         connectCompletion?.finish(.failure(CancellationError()))
         connectCompletion = nil
         stopKeepAlive()
-        ptyTask?.cancel()
+        let pendingPTY = ptyTask
+        pendingPTY?.cancel()
         ptyTask = nil
         writer = nil
         await forwarding?.shutdown()
@@ -151,6 +152,8 @@ public final class CitadelSSHSession: SSHSession, @unchecked Sendable {
         await connection?.close()
         connection = nil
         client = nil
+        // Finish the previous channel's cleanup before allowing a sequential reconnect.
+        await pendingPTY?.value
         transition(to: .disconnected)
         AppLog.ssh.info("SSH session disconnected")
     }

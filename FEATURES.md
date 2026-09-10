@@ -73,9 +73,9 @@ Update this file in the same PR as the feature.
 - [x] Host-key prompt: Cancel / Connect Once / Trust and Save
 - [x] Reject a changed host key unless the user accepts it
 - [x] Same host-key policy on the SFTP connection
-- [x] Connect timeout
+- [x] Configured timeout for each SSH handshake and for post-authentication setup (PTY/shell acknowledgements, or SFTP subsystem/version negotiation and initial directory lookup); cancellation closes pending connections
 - [x] Keep-alive (empty channel-data while `keepAliveSeconds > 0`)
-- [x] Startup command after the PTY opens
+- [x] Connected state and startup command only after the server acknowledges both PTY and shell requests; immediate output is buffered during setup
 - [x] Configurable `TERM` (default `xterm-256color`)
 - [x] PTY resize
 - [x] Mapped `SSHError` strings in the UI; details stay in `os.Logger`
@@ -85,7 +85,7 @@ Update this file in the same PR as the feature.
 - [ ] Ed25519 user keys in PKCS#8 format
 - [ ] Passphrase-protected PKCS#1, PKCS#8, and SEC1 PEM keys
 - [ ] Reliable RSA-only *host* keys (Citadel / SwiftNIO SSH limit)
-- [x] SSH Agent identities: `SSH_AUTH_SOCK` or a per-session Unix socket (OpenSSH, 1Password, Secretive protocol); explicit public-key selection and SHA-256 fingerprints; Ed25519, RSA SHA-2 (2048–8192 bits), and ECDSA P-256/P-384/P-521; terminal, SFTP, and mixed-auth jump routes; bounded, cancellable requests and verified signatures. Third-party approval dialogs still need manual validation with those apps; certificates, security-key identities, destination constraints, and agent forwarding are separate work.
+- [x] SSH Agent identities: `SSH_AUTH_SOCK` or a per-session Unix socket (OpenSSH, 1Password, Secretive protocol); explicit public-key selection and SHA-256 fingerprints; Ed25519, RSA SHA-2 (2048–8192 bits), and ECDSA P-256/P-384/P-521; terminal, SFTP, mixed-auth jump routes, and all TCP forwarding modes; bounded, cancellable requests, verified signatures, and rejection of late host-key approvals after disconnect. Third-party approval dialogs still need manual validation with those apps; certificates, security-key identities, destination constraints, and agent forwarding are separate work.
 - [ ] FIDO security-key identities (`ecdsa-sk`, `ed25519-sk`) through SSH Agent
 - [ ] OpenSSH user certificates paired with a private-key or SSH Agent identity
 - [ ] PuTTY `.ppk` private-key import or conversion
