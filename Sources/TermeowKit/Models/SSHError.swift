@@ -13,6 +13,7 @@ public enum SSHError: Error, Equatable, Sendable, LocalizedError {
     case missingCredential
     case invalidJumpRoute
     case sshAgent(SSHAgentError)
+    case sshCertificate(SSHCertificateError)
     indirect case jumpHostFailed(String, SSHError)
 
     public var errorDescription: String? { userMessage }
@@ -42,6 +43,8 @@ public enum SSHError: Error, Equatable, Sendable, LocalizedError {
         case .invalidJumpRoute:
             "The jump-host route is invalid. Check its saved sessions before connecting."
         case .sshAgent(let error):
+            error.localizedDescription
+        case .sshCertificate(let error):
             error.localizedDescription
         case .jumpHostFailed(let name, let reason):
             "Jump host \(name): \(reason.userMessage)"

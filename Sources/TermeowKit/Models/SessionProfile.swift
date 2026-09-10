@@ -37,6 +37,7 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
     public var jumpHostID: UUID?
     public var portForwards: [PortForwardRule]
     public var agent: SSHAgentConfiguration
+    public var certificate: SSHCertificateConfiguration
 
     public init(
         id: UUID = UUID(),
@@ -56,7 +57,8 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         term: String = "xterm-256color",
         jumpHostID: UUID? = nil,
         portForwards: [PortForwardRule] = [],
-        agent: SSHAgentConfiguration = SSHAgentConfiguration()
+        agent: SSHAgentConfiguration = SSHAgentConfiguration(),
+        certificate: SSHCertificateConfiguration = SSHCertificateConfiguration()
     ) {
         self.id = id
         self.name = name
@@ -76,12 +78,13 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         self.jumpHostID = jumpHostID
         self.portForwards = portForwards
         self.agent = agent
+        self.certificate = certificate
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, host, port, username, authMethod, privateKeyBookmark, startupCommand, groupName
         case isFavorite, lastUsedAt, credentialID, keepAliveSeconds, timeoutSeconds, term, jumpHostID, portForwards
-        case agent
+        case agent, certificate
     }
 
     public init(from decoder: Decoder) throws {
@@ -104,6 +107,7 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
         jumpHostID = try values.decodeIfPresent(UUID.self, forKey: .jumpHostID)
         portForwards = try values.decodeIfPresent([PortForwardRule].self, forKey: .portForwards) ?? []
         agent = try values.decodeIfPresent(SSHAgentConfiguration.self, forKey: .agent) ?? SSHAgentConfiguration()
+        certificate = try values.decodeIfPresent(SSHCertificateConfiguration.self, forKey: .certificate) ?? SSHCertificateConfiguration()
     }
 
     public var displayName: String {
@@ -117,5 +121,6 @@ public struct SessionProfile: Codable, Equatable, Identifiable, Sendable {
             && timeoutSeconds > 0
             && keepAliveSeconds >= 0
             && (authMethod != .agent || agent.validationError == nil)
+            && (!certificate.enabled || (authMethod != .password && certificate.bookmark != nil))
     }
 }

@@ -365,7 +365,7 @@ struct SSHAgentIntegrationTests {
 
 private final class WeakAgentRoute { weak var lease: SSHRouteLease? }
 
-private final class OpenSSHAgentFixture: @unchecked Sendable {
+final class OpenSSHAgentFixture: @unchecked Sendable {
     let directory: URL
     let socketPath: String
     private let agent = Process()
@@ -399,7 +399,8 @@ private final class OpenSSHAgentFixture: @unchecked Sendable {
                        keepAliveSeconds: 0, timeoutSeconds: 5, agent: SSHAgentConfiguration(socketPath: socketPath, publicKey: identity.blob))
     }
 
-    func startServer(authorizedKeys: [String] = ["ed25519", "rsa", "p256", "p384", "p521"], maxAuthTries: Int = 1) async throws -> Int {
+    func startServer(authorizedKeys: [String] = ["ed25519", "rsa", "p256", "p384", "p521"], maxAuthTries: Int = 1,
+                     trustedCA: String? = nil, extraOptions: [String] = []) async throws -> Int {
         let probe = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton).bind(host: "127.0.0.1", port: 0).get()
         let port = try #require(probe.localAddress?.port)
         try await probe.close()
@@ -426,6 +427,8 @@ private final class OpenSSHAgentFixture: @unchecked Sendable {
         MaxAuthTries \(maxAuthTries)
         LogLevel ERROR
         Subsystem sftp internal-sftp
+        \(trustedCA.map { "TrustedUserCAKeys \($0)" } ?? "")
+        \(extraOptions.joined(separator: "\n"))
         """
         let configURL = directory.appendingPathComponent("sshd_config")
         try config.write(to: configURL, atomically: true, encoding: .utf8)
@@ -454,7 +457,7 @@ private final class OpenSSHAgentFixture: @unchecked Sendable {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    private func run(_ executable: String, _ arguments: [String], environment: [String: String]? = nil) throws {
+    func run(_ executable: String, _ arguments: [String], environment: [String: String]? = nil) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments
         if let environment { process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, value in value } }
