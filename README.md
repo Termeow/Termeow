@@ -86,7 +86,7 @@ The opt-in `PortForwardLiveTests` suite uses the same environment as `ProxyJumpL
 
 Choose **SSH Agent** under **Authentication** in a session's editor. Leave **Agent Socket** empty to use the app process's `SSH_AUTH_SOCK`, or enter the Unix socket path provided by OpenSSH, 1Password, or Secretive (`~/...` is accepted). Click **Load Agent Keys**, compare the SHA-256 fingerprint, explicitly select a public key, and save. Load/unlock private keys in the agent itself; Termeow never imports them. **Copy Public Key** copies the public OpenSSH key, suitable for installing on a server you administer.
 
-Supported identities are Ed25519, RSA (2048–8192 bits), and ECDSA P-256/P-384/P-521. RSA uses `rsa-sha2-512` by default; select **Use RSA SHA-256 instead of SHA-512** for a server that requires `rsa-sha2-256`. There is no automatic retry or RSA/SHA-1 fallback. Certificate and FIDO/security-key entries are shown as unsupported and cannot be selected.
+Supported identities are Ed25519, RSA (2048–8192 bits), and ECDSA P-256/P-384/P-521. RSA uses `rsa-sha2-512` by default; select **Use RSA SHA-256 instead of SHA-512** for a server that requires `rsa-sha2-256`. There is no automatic retry or RSA/SHA-1 fallback. Certificate entries cannot be selected directly: select their underlying plain key and pair it with a certificate file below. FIDO/security-key entries remain unsupported.
 
 Only the selected public key is offered, once, even if the agent contains many keys. Saved sessions keep the socket setting and public key, not a private key, passphrase, or agent unlock secret. Removing a key from the agent causes login to fail rather than trying another key. Changing the socket clears the selection. An empty socket setting is resolved again on each connection, so it can follow OpenSSH's socket after a restart; a GUI app does not inherit later changes made in a shell. For a third-party agent, use the socket path from that app's setup instructions.
 
@@ -94,7 +94,7 @@ Terminal and SFTP connections support agent authentication, including each hop o
 
 The client implements the public-identity and sign-request operations in the [SSH Agent protocol](https://www.rfc-editor.org/rfc/rfc9987.html). It checks the Unix socket peer's user ID, caps response sizes and key counts, and verifies returned signatures with the selected public key before sending them to SSH. It does not add/delete keys, unlock agents, run shell commands to discover agents, or forward an agent socket to a server. OpenSSH destination-constrained identities require the `session-bind@openssh.com` extension and are not supported; an agent rejection is never bypassed. See the official [1Password agent instructions](https://www.1password.dev/ssh/agent) and [Secretive setup](https://github.com/maxgoedjen/secretive) for their socket and approval settings. Their native approval dialogs have not been validated by the automated fixtures.
 
-**Copy SSH Command** declines routes containing an agent identity: a generic `ssh -J` command cannot preserve Termeow's selected key/socket per hop. To use such a route outside Termeow, configure OpenSSH's `IdentityAgent`, a public `IdentityFile`, and `IdentitiesOnly yes` for each host. This does not change how password/private-key routes are copied.
+**Copy SSH Command** declines routes containing an agent identity or an enabled user certificate: a generic `ssh -J` command cannot preserve Termeow's selected key/socket/certificate per hop. To use such a route outside Termeow, configure OpenSSH's `IdentityAgent`, `IdentityFile`, `CertificateFile`, and `IdentitiesOnly yes` as appropriate for each host. This does not change how password/private-key routes without certificates are copied.
 
 ### Agent integration tests
 
@@ -104,8 +104,31 @@ TERMEOW_AGENT_INTEGRATION_TESTS=1 swift test --filter SSHAgentIntegrationTests
 
 These opt-in tests use macOS's `ssh-agent`, `ssh-add`, `ssh-keygen`, and `sshd` with generated ephemeral keys, a private temporary socket, and a loopback-only server. They never modify the user's normal agent, SSH configuration, or `authorized_keys`. They verify all supported signature algorithms against OpenSSH, PTY output, SFTP listing, multi-hop agent/mixed-auth routes, all forwarding modes with actual data transfer, rejected host keys, missing/refused keys, concurrent connections, terminal/SFTP cancellation, and approvals lasting longer than ten seconds on direct and jump routes. The fixture disables `StrictModes` only for its own temporary `authorized_keys` underneath the shared `/tmp` parent; the private fixture directory remains mode `0700`. CI opts into these tests. Ordinary `swift test` still runs the protocol/validation tests without starting OpenSSH processes.
 
+## OpenSSH user certificates
+
+User certificates let a server authorize a CA-signed user key instead of installing every individual public key. They are SSH certificates, not X.509/TLS certificates, and are separate from the server host key checked by the connection prompt. Your administrator must configure server-side CA trust and issue the certificate; Termeow does not issue certificates or change the server's policy. See the [OpenSSH certificate overview](https://man.openbsd.org/ssh-keygen#CERTIFICATES) and [CertificateFile configuration](https://man.openbsd.org/ssh_config#CertificateFile).
+
+In the session editor, choose **Private Key** or **SSH Agent** and configure the matching signing key. Enable **Use OpenSSH User Certificate**, choose its `-cert.pub` file, review the key/CA fingerprints and validity period, then save. The editor displays the certificate ID, serial, principals, critical option names, and permission extension names. **Reload Certificate** refreshes this preview after renewal; every new connection also reads the file again automatically. **Remove Certificate** explicitly restores ordinary key authentication. Switching to password authentication disables the certificate.
+
+Supported v01 subject keys are Ed25519, RSA (2048–8192 bits), and ECDSA P-256/P-384/P-521. Private-key files retain their existing format support: Ed25519/RSA OpenSSH, including passphrases, and unencrypted RSA PKCS#1/PKCS#8 PEM. ECDSA certificate subjects require an agent. Supported CA signatures are Ed25519, RSA SHA-2 (2048–8192 bits), and those three ECDSA curves. RSA private-key certificates use SHA-512; agent certificates honor the session's SHA-512/SHA-256 choice. RSA/SHA-1, FIDO, host certificates, automatic certificate discovery, and directly selecting a certificate identity from an agent are not supported.
+
+Termeow preserves the original signed bytes, validates certificate integrity and validity against the Mac's clock, and checks that the certificate matches the signing key before requesting a signature. Files are bounded (64 KiB decoded certificate, 128 KiB text) and must be regular files. Only a security-scoped file bookmark and display name are persisted, not certificate/private-key bytes. Renewing the file at the same location takes effect on reconnect; a moved or inaccessible file may need to be selected again. An established connection is not automatically disconnected when its certificate expires.
+
+A valid CA signature proves integrity, not that the target server trusts the CA. Principal-to-account mapping, CA trust/revocation, critical options, and permissions remain the server's responsibility under the [OpenSSH certificate protocol](https://datatracker.ietf.org/doc/draft-ietf-sshm-cert/). A certificate principal need not equal the login username when the server provides a mapping. The client does not execute certificate commands locally or remove restrictions. An enabled certificate never falls back to an ordinary key or password if parsing, validity, key matching, or server authorization fails.
+
+Certificates work on terminal and SFTP connections, including each hop of a mixed-authentication jump route. Each hop chooses its own certificate. Port forwarding works only when the server and certificate permit it: a certificate without `permit-port-forwarding` can reject a jump route or tunnel, and one without `permit-pty` cannot open an interactive terminal. SFTP uses a separate connection and can require another agent approval. Third-party agents that enforce additional destination binding remain unsupported as described above.
+
+### Certificate integration tests
+
+```bash
+swift test --filter SSHUserCertificateTests
+TERMEOW_CERTIFICATE_INTEGRATION_TESTS=1 swift test --filter SSHCertificateIntegrationTests
+```
+
+The opt-in suite generates temporary CA and user keys and starts a loopback-only OpenSSH server. It checks supported subject/CA algorithms and both agent RSA digests; encrypted/private-key formats; terminal/SFTP across mixed certificate jumps; renewal and mismatched/expired keys; cancellation; server principal mapping; rejection without plain-key fallback; and enforcement of forced commands, unknown critical options, PTY, and all TCP forwarding permissions. It never changes the user's agent, SSH configuration, or trusted CAs. `TERMEOW_AGENT_INTEGRATION_TESTS=1 swift test` also enables this suite for CI.
+
 ## Notes
 
 - Passwords and key passphrases are stored in the Keychain service `cn.termeow.Termeow`. Session JSON never stores secrets.
-- Passwords, Ed25519 private-key files, unencrypted RSA PEM files, and the SSH Agent identities above are supported. ECDSA private-key files, encrypted PEM files, and some RSA/OpenSSH file-format combinations remain unsupported.
+- Passwords, Ed25519/RSA OpenSSH private-key files (including passphrases), unencrypted RSA PEM files, the SSH Agent identities, and user certificates above are supported. ECDSA/Ed25519 PKCS#8 private-key files, ECDSA OpenSSH/SEC1 files, and encrypted PEM files remain unsupported. RSA/OpenSSH without a user certificate still uses Citadel's legacy RSA signature path; complete SHA-2 negotiation for every plain private-key format remains on the roadmap.
 - App Sandbox is off in this first slice so security-scoped key bookmarks from `NSOpenPanel` can work.

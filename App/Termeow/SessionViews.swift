@@ -1569,6 +1569,7 @@ struct SessionEditorForm: View {
     var onCancel: () -> Void
     var onSave: () -> Void
     @State private var keyPath = ""
+    @State private var certificateValidationFailure: String?
 
     var body: some View {
         Form {
@@ -1596,6 +1597,11 @@ struct SessionEditorForm: View {
                     }
                 } else {
                     SSHAgentIdentityEditor(configuration: $state.profile.agent)
+                }
+                if state.profile.authMethod != .password {
+                    SSHCertificateEditor(configuration: $state.profile.certificate,
+                                         validationFailure: $certificateValidationFailure,
+                                         agentPublicKey: state.profile.authMethod == .agent ? state.profile.agent.publicKey : nil)
                 }
             }
             Section("Jump Host") {
@@ -1641,13 +1647,19 @@ struct SessionEditorForm: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Session")
+        .onChange(of: state.profile.authMethod) {
+            if state.profile.authMethod == .password {
+                state.profile.certificate.enabled = false
+                certificateValidationFailure = nil
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel", action: onCancel)
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save", action: onSave)
-                    .disabled(!state.profile.isValidForSaving || routeError != nil || PortForwardRule.validationError(in: state.profile.portForwards) != nil)
+                    .disabled(!state.profile.isValidForSaving || certificateValidationFailure != nil || routeError != nil || PortForwardRule.validationError(in: state.profile.portForwards) != nil)
             }
         }
     }

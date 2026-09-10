@@ -124,6 +124,7 @@ enum CitadelConnectionFactory {
     static func mapError(_ error: Error) -> SSHError {
         if let ssh = error as? SSHError { return ssh }
         if let agent = error as? SSHAgentError { return .sshAgent(agent) }
+        if let certificate = error as? SSHCertificateError { return .sshCertificate(certificate) }
         if error is SSHRouteError { return .invalidJumpRoute }
         if error is InvalidHostKey { return .unknownHostKey }
         let text = String(describing: error).lowercased()
@@ -134,15 +135,22 @@ enum CitadelConnectionFactory {
     }
 
     private static func authenticationMethod(profile: SessionProfile, secret: String, agentAccess: SSHAgentAccess) throws -> SSHAuthenticationMethod {
+        let certificate = profile.certificate.enabled ? try profile.certificate.load() : nil
+        try certificate?.validate()
+        let method: SSHAuthenticationMethod
         switch profile.authMethod {
         case .password:
+            guard certificate == nil else { throw SSHCertificateError.invalidAuthentication }
             guard !secret.isEmpty else { throw SSHError.missingCredential }
-            return .passwordBased(username: profile.username, password: secret)
+            method = .passwordBased(username: profile.username, password: secret)
         case .privateKey:
-            return try privateKeyAuth(profile: profile, secret: secret)
+            method = try privateKeyAuth(profile: profile, secret: secret)
         case .agent:
-            return try SSHAgentAuthentication.method(username: profile.username, configuration: profile.agent, access: agentAccess, timeout: TimeInterval(max(profile.timeoutSeconds, 1)))
+            if let certificate { try certificate.validate(matching: profile.agent.publicKey) }
+            method = try SSHAgentAuthentication.method(username: profile.username, configuration: profile.agent, access: agentAccess, timeout: TimeInterval(max(profile.timeoutSeconds, 1)))
         }
+        guard let certificate else { return method }
+        return try SSHCertificateAuthentication.method(base: method, certificate: certificate, rsaSHA256: profile.authMethod == .agent && profile.agent.rsaSHA256)
     }
 
     private static func privateKeyAuth(profile: SessionProfile, secret: String) throws -> SSHAuthenticationMethod {
@@ -158,7 +166,7 @@ enum CitadelConnectionFactory {
             guard url.startAccessingSecurityScopedResource() else { throw SSHError.invalidPrivateKey }
             defer { url.stopAccessingSecurityScopedResource() }
             let keyText = try String(contentsOf: url, encoding: .utf8)
-            return try privateKeyAuthentication(username: profile.username, keyText: keyText, secret: secret)
+            return try privateKeyAuthentication(username: profile.username, keyText: keyText, secret: secret, forCertificate: profile.certificate.enabled)
         } catch let error as SSHError {
             throw error
         } catch {
@@ -166,7 +174,7 @@ enum CitadelConnectionFactory {
         }
     }
 
-    static func privateKeyAuthentication(username: String, keyText: String, secret: String) throws -> SSHAuthenticationMethod {
+    static func privateKeyAuthentication(username: String, keyText: String, secret: String, forCertificate: Bool = false) throws -> SSHAuthenticationMethod {
         if let rsaKey = try PrivateKeyMaterial.rsaPEMKey(from: keyText) {
             return try RSASHA2Authentication.method(username: username, key: rsaKey)
         }
@@ -180,6 +188,7 @@ enum CitadelConnectionFactory {
                 return .ed25519(username: username, privateKey: key)
             case .rsa:
                 let key = try Insecure.RSA.PrivateKey(sshRsa: keyText, decryptionKey: passphrase)
+                if forCertificate { return SSHCertificateAuthentication.rsaMethod(username: username, key: key) }
                 return .rsa(username: username, privateKey: key)
             case .ecdsaP256, .ecdsaP384, .ecdsaP521:
                 throw SSHError.unsupportedAlgorithm

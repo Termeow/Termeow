@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B10000000000000000000003 /* SSHCertificateEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* SSHCertificateEditor.swift */; };
 		B10000000000000000000001 /* SSHAgentIdentityEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* SSHAgentIdentityEditor.swift */; };
 		A10000000000000000000013 /* TermeowKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* TermeowKit */; };
 		A10000000000000000000014 /* TermeowKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* TermeowKit */; };
@@ -29,6 +30,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		B10000000000000000000004 /* SSHCertificateEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHCertificateEditor.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 /* SSHAgentIdentityEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHAgentIdentityEditor.swift; sourceTree = "<group>"; };
 		A10000000000000000000004 /* Termeow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Termeow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000005 /* TermeowKitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TermeowKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -90,6 +92,7 @@
 				A1000000000000000000005F /* TabBarView.swift */,
 				A10000000000000000000053 /* SessionViews.swift */,
 				B10000000000000000000002 /* SSHAgentIdentityEditor.swift */,
+				B10000000000000000000004 /* SSHCertificateEditor.swift */,
 				A10000000000000000000054 /* TerminalContainerView.swift */,
 				A10000000000000000000055 /* HostKeyView.swift */,
 				A1000000000000000000005C /* SFTPView.swift */,
@@ -218,6 +221,7 @@
 				A10000000000000000000042 /* ContentView.swift in Sources */,
 				A10000000000000000000043 /* SessionViews.swift in Sources */,
 				B10000000000000000000001 /* SSHAgentIdentityEditor.swift in Sources */,
+				B10000000000000000000003 /* SSHCertificateEditor.swift in Sources */,
 				A10000000000000000000044 /* TerminalContainerView.swift in Sources */,
 				A10000000000000000000045 /* HostKeyView.swift in Sources */,
 				A1000000000000000000004A /* SFTPView.swift in Sources */,

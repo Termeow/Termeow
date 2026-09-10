@@ -210,6 +210,15 @@ extension Insecure.RSA {
         }
         
         public func signature<D: DataProtocol>(for message: D) throws -> Signature {
+            Signature(rawRepresentation: try signDigest(Array(Insecure.SHA1.hash(data: message)), nid: NID_sha1))
+        }
+
+        /// RSA SHA-512 for OpenSSH user-certificate authentication without a SHA-1 fallback.
+        public func signatureSHA512<D: DataProtocol>(for message: D) throws -> Data {
+            try signDigest(Array(SHA512.hash(data: message)), nid: NID_sha512)
+        }
+
+        private func signDigest(_ hash: [UInt8], nid: Int32) throws -> Data {
             let context = CCryptoBoringSSL_RSA_new()
             defer { CCryptoBoringSSL_RSA_free(context) }
 
@@ -230,12 +239,13 @@ extension Insecure.RSA {
                 throw CitadelError.signingError
             }
             
-            let hash = Array(Insecure.SHA1.hash(data: message))
-            let out = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+            let capacity = Int(CCryptoBoringSSL_RSA_size(context))
+            guard capacity > 0, capacity <= 4096 else { throw CitadelError.signingError }
+            let out = UnsafeMutablePointer<UInt8>.allocate(capacity: capacity)
             defer { out.deallocate() }
-            var outLength: UInt32 = 4096
+            var outLength: UInt32 = UInt32(capacity)
             let result = CCryptoBoringSSL_RSA_sign(
-                NID_sha1,
+                nid,
                 hash,
                 Int(hash.count),
                 out,
@@ -247,7 +257,7 @@ extension Insecure.RSA {
                 throw CitadelError.signingError
             }
             
-            return Signature(rawRepresentation: Data(bytes: out, count: Int(outLength)))
+            return Data(bytes: out, count: Int(outLength))
         }
         
         public func signature<D>(for data: D) throws -> NIOSSHSignatureProtocol where D : DataProtocol {

@@ -61,7 +61,7 @@ struct SSHAgentIdentityEditor: View {
             Text("The agent has no keys. Add or unlock a key in your agent, then refresh.")
                 .font(.caption).foregroundStyle(.secondary)
         } else if loaded, !identities.contains(where: \.isSupported) {
-            Text("No supported keys found. Use Ed25519, RSA (2048-8192 bits), or ECDSA P-256/P-384/P-521. Security-key identities and SSH certificates are not supported yet.")
+            Text("No supported keys found. Use Ed25519, RSA (2048-8192 bits), or ECDSA P-256/P-384/P-521. For certificate login, select the underlying plain key and choose its certificate file below. Security-key identities are not supported yet.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Text("Only this selected key is offered. Private keys stay in the agent. Approve any agent prompt within the session timeout (at most 120 seconds). This does not forward the agent to the server.")

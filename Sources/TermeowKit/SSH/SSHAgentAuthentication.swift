@@ -51,7 +51,8 @@ struct AgentSigner {
 
     func sign(_ message: Data, algorithm: String) throws -> Data {
         do {
-            guard message.count <= 65_536 else { throw SSHAgentError.invalidResponse }
+            // A user certificate can occupy 64 KiB before the SSH authentication fields.
+            guard message.count <= 131_072 else { throw SSHAgentError.invalidResponse }
             var request = AgentWire(Data([13]))
             request.append(identity.blob); request.append(message)
             request.append(UInt32(algorithm == "rsa-sha2-512" ? 4 : algorithm == "rsa-sha2-256" ? 2 : 0))

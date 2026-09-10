@@ -344,8 +344,8 @@ final class AppModel {
             statusMessage = error.localizedDescription
             return
         }
-        guard !route.contains(where: { $0.authMethod == .agent }) else {
-            statusMessage = "Copy SSH Command is unavailable for agent routes."
+        guard !route.contains(where: { $0.authMethod == .agent || $0.certificate.enabled }) else {
+            statusMessage = "Copy SSH Command is unavailable for agent or certificate routes."
             return
         }
         let destination = shellArgument("\(profile.username)@\(profile.host)")
